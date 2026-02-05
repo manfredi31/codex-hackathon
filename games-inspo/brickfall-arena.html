@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brickfall Arena</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% 0%, #1f2a44 0%, #141b31 55%, #0a0f1d 100%);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            color: #f4f8ff;
+        }
+
+        #game-container {
+            position: relative;
+            width: 640px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+            border: 3px solid #2f406f;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 640px;
+            height: 480px;
+            background: linear-gradient(180deg, #182546 0%, #111a33 60%, #0d1428 100%);
+        }
+
+        #ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .hud {
+            position: absolute;
+            top: 12px;
+            left: 14px;
+            right: 14px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 20px;
+            font-weight: 700;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        .screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            pointer-events: auto;
+            background: rgba(8, 12, 24, 0.83);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 46px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #ffdd8a;
+            text-shadow: 0 0 18px rgba(255, 221, 138, 0.35);
+        }
+
+        p {
+            margin: 0;
+            font-size: 18px;
+            color: #d6deee;
+        }
+
+        .subtitle {
+            margin-bottom: 24px;
+            font-size: 16px;
+            color: #b8c4de;
+        }
+
+        .controls {
+            line-height: 1.65;
+            margin-bottom: 18px;
+            font-size: 14px;
+            color: #b6c2e1;
+        }
+
+        .key {
+            display: inline-block;
+            padding: 2px 8px;
+            margin: 0 2px;
+            border-radius: 4px;
+            background: #2d3f6a;
+            border-bottom: 2px solid #1b294a;
+            font-size: 12px;
+            font-weight: 700;
+            color: #ebf3ff;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 7px;
+            padding: 12px 30px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            background: linear-gradient(180deg, #ffd87b, #f2bf4f);
+            color: #1d2335;
+            box-shadow: 0 6px 0 #c9932c;
+            transition: transform 0.08s;
+        }
+
+        .btn:active {
+            transform: translateY(6px);
+            box-shadow: none;
+        }
+
+        #game-over-screen h1 {
+            color: #ff9f8a;
+            text-shadow: 0 0 16px rgba(255, 159, 138, 0.38);
+        }
+
+        #final-score,
+        #final-lines {
+            margin-bottom: 6px;
+            font-size: 22px;
+            font-weight: 700;
+            color: #f2f6ff;
+        }
+
+        #touch-controls {
+            position: absolute;
+            left: 50%;
+            bottom: 10px;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .touch-btn {
+            width: 62px;
+            height: 46px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(235, 245, 255, 0.15);
+            color: #f8fbff;
+            font-size: 20px;
+            font-weight: 700;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.22);
+            backdrop-filter: blur(2px);
+            touch-action: none;
+        }
+
+        .touch-btn:active {
+            transform: translateY(2px);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (pointer: fine) {
+            #touch-controls {
+                opacity: 0.55;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+        <div id="ui-layer">
+            <div class="hud">
+                <div id="score-display">SCORE: 0</div>
+                <div id="lines-display">LINES: 0</div>
+                <div id="speed-display">SPEED: 1.4</div>
+            </div>
+
+            <div id="start-screen" class="screen">
+                <h1>Brickfall Arena</h1>
+                <p class="subtitle">Real-time falling blocks. Stay alive as the pace spikes.</p>
+                <div class="controls">
+                    Move: <span class="key">A</span><span class="key">D</span> or <span class="key">Left</span><span class="key">Right</span><br>
+                    Rotate: <span class="key">W</span> / <span class="key">Up</span> / <span class="key">Space</span><br>
+                    Soft Drop: <span class="key">S</span> / <span class="key">Down</span><br>
+                    Mobile: use on-screen controls
+                </div>
+                <button id="start-btn" class="btn">Start Run</button>
+            </div>
+
+            <div id="game-over-screen" class="screen hidden">
+                <h1>Arena Locked</h1>
+                <p id="final-score">Score: 0</p>
+                <p id="final-lines">Lines: 0</p>
+                <button id="restart-btn" class="btn">Restart</button>
+            </div>
+        </div>
+
+        <div id="touch-controls" class="hidden">
+            <button id="touch-left" class="touch-btn" aria-label="Move Left">&#9664;</button>
+            <button id="touch-rotate" class="touch-btn" aria-label="Rotate">&#8635;</button>
+            <button id="touch-right" class="touch-btn" aria-label="Move Right">&#9654;</button>
+            <button id="touch-down" class="touch-btn" aria-label="Soft Drop">&#9660;</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * ==========================================
+ * 1. UTILITY CLASSES
+ * ==========================================
+ */
+
+const GAME_STATE = {
+    START: "START",
+    PLAYING: "PLAYING",
+    GAMEOVER: "GAMEOVER"
+};
+
+const CANVAS_WIDTH = 640;
+const CANVAS_HEIGHT = 480;
+const BOARD_COLS = 10;
+const BOARD_ROWS = 18;
+const CELL_SIZE = 24;
+
+const PIECE_DEFS = {
+    O: {
+        color: "#ffd166",
+        rotations: [
+            [[0, 0], [1, 0], [0, 1], [1, 1]]
+        ]
+    },
+    I: {
+        color: "#66d9ff",
+        rotations: [
+            [[0, 1], [1, 1], [2, 1], [3, 1]],
+            [[2, 0], [2, 1], [2, 2], [2, 3]]
+        ]
+    },
+    L: {
+        color: "#ff9c5a",
+        rotations: [
+            [[0, 0], [0, 1], [1, 1], [2, 1]],
+            [[1, 0], [2, 0], [1, 1], [1, 2]],
+            [[0, 1], [1, 1], [2, 1], [2, 2]],
+            [[1, 0], [1, 1], [0, 2], [1, 2]]
+        ]
+    },
+    T: {
+        color: "#be8bff",
+        rotations: [
+            [[1, 0], [0, 1], [1, 1], [2, 1]],
+            [[1, 0], [1, 1], [2, 1], [1, 2]],
+            [[0, 1], [1, 1], [2, 1], [1, 2]],
+            [[1, 0], [0, 1], [1, 1], [1, 2]]
+        ]
+    }
+};
+
+function createEmptyGrid(rows, cols) {
+    return Array.from({ length: rows }, () => new Array(cols).fill(null));
+}
+
+class InputManager {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.keys = {};
+        this.down = {};
+        this.pressed = {};
+
+        this.virtualDown = {};
+        this.virtualHeld = {};
+        this.virtualPressed = {};
+
+        this.preventedCodes = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"]);
+        this.virtualMap = [
+            { id: "touch-left", code: "ArrowLeft" },
+            { id: "touch-right", code: "ArrowRight" },
+            { id: "touch-rotate", code: "ArrowUp" },
+            { id: "touch-down", code: "ArrowDown" }
+        ];
+
+        window.addEventListener("keydown", (e) => {
+            if (this.preventedCodes.has(e.code)) e.preventDefault();
+            this.keys[e.code] = true;
+            if (!this.down[e.code]) {
+                this.down[e.code] = true;
+                this.pressed[e.code] = true;
+            }
+        });
+
+        window.addEventListener("keyup", (e) => {
+            this.keys[e.code] = false;
+            this.down[e.code] = false;
+            this.pressed[e.code] = false;
+        });
+
+        this.virtualMap.forEach((binding) => this.bindVirtualButton(binding.id, binding.code));
+    }
+
+    bindVirtualButton(id, code) {
+        const button = document.getElementById(id);
+        if (!button) return;
+
+        const down = (e) => {
+            e.preventDefault();
+            this.virtualDown[code] = true;
+            if (!this.virtualHeld[code]) {
+                this.virtualHeld[code] = true;
+                this.virtualPressed[code] = true;
+            }
+        };
+
+        const up = (e) => {
+            e.preventDefault();
+            this.virtualDown[code] = false;
+            this.virtualHeld[code] = false;
+        };
+
+        button.addEventListener("pointerdown", down);
+        button.addEventListener("pointerup", up);
+        button.addEventListener("pointercancel", up);
+        button.addEventListener("pointerleave", up);
+        button.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
+
+    isDown(code) {
+        return !!this.keys[code] || !!this.virtualDown[code];
+    }
+
+    isPressed(code) {
+        return !!this.pressed[code] || !!this.virtualPressed[code];
+    }
+
+    endFrame() {
+        for (const code in this.pressed) this.pressed[code] = false;
+        for (const code in this.virtualPressed) this.virtualPressed[code] = false;
+    }
+}
+
+/**
+ * ==========================================
+ * 2. BASE GAME OBJECT
+ * ==========================================
+ */
+
+class GameObject {
+    constructor() {
+        this.markedForDeletion = false;
+    }
+
+    update(dt) {}
+    render(ctx) {}
+}
+
+/**
+ * ==========================================
+ * 3. GAME ENTITIES
+ * ==========================================
+ */
+
+class FallingPiece extends GameObject {
+    constructor(type, def, spawnX) {
+        super();
+        this.type = type;
+        this.color = def.color;
+        this.rotations = def.rotations;
+        this.rotation = 0;
+        this.x = spawnX;
+        this.y = -2;
+    }
+
+    getCells(rotation = this.rotation, x = this.x, y = this.y) {
+        return this.rotations[rotation].map(([cx, cy]) => ({
+            x: x + cx,
+            y: y + cy
+        }));
+    }
+}
+
+class SparkParticle extends GameObject {
+    constructor(x, y, color) {
+        super();
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        const speed = 80 + Math.random() * 150;
+        const angle = Math.random() * Math.PI * 2;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed - 25;
+        this.life = 0.35 + Math.random() * 0.4;
+        this.maxLife = this.life;
+        this.size = 2 + Math.random() * 3;
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.vy += 220 * dt;
+        this.life -= dt;
+        if (this.life <= 0) this.markedForDeletion = true;
+    }
+
+    render(ctx) {
+        if (this.life <= 0) return;
+        const alpha = Math.max(0, this.life / this.maxLife);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.globalAlpha = 1;
+    }
+}
+
+/**
+ * ==========================================
+ * 4. GAME MANAGER
+ * ==========================================
+ */
+
+class Game {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.input = new InputManager(canvas);
+
+        this.boardX = Math.floor((CANVAS_WIDTH - BOARD_COLS * CELL_SIZE) / 2);
+        this.boardY = Math.floor((CANVAS_HEIGHT - BOARD_ROWS * CELL_SIZE) / 2);
+        this.boardWidth = BOARD_COLS * CELL_SIZE;
+        this.boardHeight = BOARD_ROWS * CELL_SIZE;
+
+        this.startFallInterval = 0.7;
+        this.minFallInterval = 0.2;
+        this.rampDuration = 90;
+        this.horizontalDelay = 0.14;
+        this.horizontalRepeat = 0.07;
+
+        this.pieceTypes = Object.keys(PIECE_DEFS);
+        this.effects = [];
+        this.visualTime = 0;
+        this.lastTime = performance.now();
+        this.state = GAME_STATE.START;
+
+        this.ui = {
+            score: document.getElementById("score-display"),
+            lines: document.getElementById("lines-display"),
+            speed: document.getElementById("speed-display"),
+            start: document.getElementById("start-screen"),
+            over: document.getElementById("game-over-screen"),
+            finalScore: document.getElementById("final-score"),
+            finalLines: document.getElementById("final-lines"),
+            touch: document.getElementById("touch-controls")
+        };
+
+        document.getElementById("start-btn").addEventListener("click", () => this.startGame());
+        document.getElementById("restart-btn").addEventListener("click", () => this.startGame());
+
+        this.resetRunState();
+        this.updateHUD();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    resetRunState() {
+        this.grid = createEmptyGrid(BOARD_ROWS, BOARD_COLS);
+        this.score = 0;
+        this.lines = 0;
+        this.elapsed = 0;
+        this.fallTimer = 0;
+        this.currentFallInterval = this.startFallInterval;
+        this.nextType = this.randomType();
+        this.activePiece = null;
+        this.horizontalState = {
+            left: { held: 0, repeating: false },
+            right: { held: 0, repeating: false }
+        };
+    }
+
+    startGame() {
+        this.resetRunState();
+        this.effects = [];
+        this.state = GAME_STATE.PLAYING;
+        this.ui.start.classList.add("hidden");
+        this.ui.over.classList.add("hidden");
+        this.ui.touch.classList.remove("hidden");
+        this.spawnPiece();
+        this.updateHUD();
+    }
+
+    randomType() {
+        const index = Math.floor(Math.random() * this.pieceTypes.length);
+        return this.pieceTypes[index];
+    }
+
+    spawnPiece() {
+        const type = this.nextType;
+        const spawnX = Math.floor(BOARD_COLS / 2) - 2;
+        this.activePiece = new FallingPiece(type, PIECE_DEFS[type], spawnX);
+        this.nextType = this.randomType();
+        this.fallTimer = 0;
+
+        if (this.collides(this.activePiece, 0, 0, this.activePiece.rotation)) {
+            this.gameOver();
+            return false;
+        }
+        return true;
+    }
+
+    collides(piece, offsetX, offsetY, rotation) {
+        const cells = piece.getCells(rotation, piece.x + offsetX, piece.y + offsetY);
+        for (const cell of cells) {
+            if (cell.x < 0 || cell.x >= BOARD_COLS || cell.y >= BOARD_ROWS) {
+                return true;
+            }
+            if (cell.y >= 0 && this.grid[cell.y][cell.x]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    tryMove(dx, dy) {
+        if (!this.activePiece) return false;
+        if (this.collides(this.activePiece, dx, dy, this.activePiece.rotation)) return false;
+        this.activePiece.x += dx;
+        this.activePiece.y += dy;
+        return true;
+    }
+
+    tryRotate() {
+        if (!this.activePiece) return false;
+        const nextRotation = (this.activePiece.rotation + 1) % this.activePiece.rotations.length;
+        const kicks = [0, -1, 1, -2, 2];
+        for (const kick of kicks) {
+            if (!this.collides(this.activePiece, kick, 0, nextRotation)) {
+                this.activePiece.rotation = nextRotation;
+                this.activePiece.x += kick;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    lockPiece() {
+        if (!this.activePiece) return;
+        const cells = this.activePiece.getCells();
+
+        for (const cell of cells) {
+            if (cell.y < 0) {
+                this.gameOver();
+                return;
+            }
+            this.grid[cell.y][cell.x] = this.activePiece.color;
+        }
+
+        this.spawnPieceSparks(cells, this.activePiece.color);
+
+        const cleared = this.clearLines();
+        if (cleared > 0) {
+            const scoreTable = [0, 100, 300, 500, 800];
+            this.score += scoreTable[cleared] || cleared * 120;
+            this.lines += cleared;
+        }
+
+        if (this.state === GAME_STATE.PLAYING) {
+            this.spawnPiece();
+        }
+    }
+
+    clearLines() {
+        const fullRows = [];
+        for (let y = 0; y < BOARD_ROWS; y++) {
+            if (this.grid[y].every((cell) => cell !== null)) {
+                fullRows.push(y);
+            }
+        }
+
+        if (fullRows.length === 0) return 0;
+
+        fullRows.forEach((row) => this.spawnLineSparks(row));
+        const clearSet = new Set(fullRows);
+        const remainingRows = this.grid.filter((_, idx) => !clearSet.has(idx));
+        const missing = BOARD_ROWS - remainingRows.length;
+        for (let i = 0; i < missing; i++) {
+            remainingRows.unshift(new Array(BOARD_COLS).fill(null));
+        }
+        this.grid = remainingRows;
+
+        return fullRows.length;
+    }
+
+    spawnPieceSparks(cells, color) {
+        for (const cell of cells) {
+            if (cell.y < 0) continue;
+            const px = this.boardX + cell.x * CELL_SIZE + CELL_SIZE * 0.5;
+            const py = this.boardY + cell.y * CELL_SIZE + CELL_SIZE * 0.5;
+            for (let i = 0; i < 4; i++) {
+                this.effects.push(new SparkParticle(px, py, color));
+            }
+        }
+    }
+
+    spawnLineSparks(row) {
+        const y = this.boardY + row * CELL_SIZE + CELL_SIZE * 0.5;
+        for (let x = 0; x < BOARD_COLS; x++) {
+            const px = this.boardX + x * CELL_SIZE + CELL_SIZE * 0.5;
+            const color = "#f0f6ff";
+            for (let i = 0; i < 3; i++) {
+                this.effects.push(new SparkParticle(px, y, color));
+            }
+        }
+    }
+
+    updateHorizontalInput(dt) {
+        const leftDown = this.input.isDown("ArrowLeft") || this.input.isDown("KeyA");
+        const rightDown = this.input.isDown("ArrowRight") || this.input.isDown("KeyD");
+        const leftPressed = this.input.isPressed("ArrowLeft") || this.input.isPressed("KeyA");
+        const rightPressed = this.input.isPressed("ArrowRight") || this.input.isPressed("KeyD");
+
+        if (leftDown && rightDown) {
+            this.horizontalState.left.held = 0;
+            this.horizontalState.right.held = 0;
+            this.horizontalState.left.repeating = false;
+            this.horizontalState.right.repeating = false;
+            return;
+        }
+
+        this.applyHorizontalState(-1, leftDown, leftPressed, this.horizontalState.left, dt);
+        this.applyHorizontalState(1, rightDown, rightPressed, this.horizontalState.right, dt);
+    }
+
+    applyHorizontalState(direction, isDown, isPressed, state, dt) {
+        if (!isDown) {
+            state.held = 0;
+            state.repeating = false;
+            return;
+        }
+
+        if (isPressed) {
+            this.tryMove(direction, 0);
+            state.held = 0;
+            state.repeating = false;
+            return;
+        }
+
+        state.held += dt;
+        if (!state.repeating && state.held >= this.horizontalDelay) {
+            this.tryMove(direction, 0);
+            state.held = 0;
+            state.repeating = true;
+            return;
+        }
+
+        if (state.repeating && state.held >= this.horizontalRepeat) {
+            this.tryMove(direction, 0);
+            state.held = 0;
+        }
+    }
+
+    updateEffects(dt) {
+        this.effects.forEach((effect) => effect.update(dt));
+        this.effects = this.effects.filter((effect) => !effect.markedForDeletion);
+    }
+
+    shouldStartOrRestart() {
+        return this.input.isPressed("Enter") || this.input.isPressed("Space");
+    }
+
+    update(dt) {
+        this.updateEffects(dt);
+
+        if (this.state === GAME_STATE.START) {
+            if (this.shouldStartOrRestart()) this.startGame();
+            this.input.endFrame();
+            return;
+        }
+
+        if (this.state === GAME_STATE.GAMEOVER) {
+            if (this.shouldStartOrRestart()) this.startGame();
+            this.input.endFrame();
+            return;
+        }
+
+        this.elapsed += dt;
+        const ramp = Math.min(1, this.elapsed / this.rampDuration);
+        this.currentFallInterval = this.startFallInterval - (this.startFallInterval - this.minFallInterval) * ramp;
+
+        this.updateHorizontalInput(dt);
+
+        const rotatePressed = this.input.isPressed("ArrowUp") || this.input.isPressed("KeyW") || this.input.isPressed("Space");
+        if (rotatePressed) this.tryRotate();
+
+        const softDrop = this.input.isDown("ArrowDown") || this.input.isDown("KeyS");
+        const interval = softDrop ? Math.max(0.06, this.currentFallInterval * 0.2) : this.currentFallInterval;
+
+        this.fallTimer += dt;
+        while (this.fallTimer >= interval && this.state === GAME_STATE.PLAYING) {
+            this.fallTimer -= interval;
+            if (!this.tryMove(0, 1)) {
+                this.lockPiece();
+                break;
+            } else if (softDrop) {
+                this.score += 1;
+            }
+        }
+
+        this.updateHUD();
+        this.input.endFrame();
+    }
+
+    gameOver() {
+        this.state = GAME_STATE.GAMEOVER;
+        this.ui.touch.classList.add("hidden");
+        this.ui.finalScore.textContent = `Score: ${this.score}`;
+        this.ui.finalLines.textContent = `Lines: ${this.lines}`;
+        this.ui.over.classList.remove("hidden");
+    }
+
+    updateHUD() {
+        this.ui.score.textContent = `SCORE: ${this.score}`;
+        this.ui.lines.textContent = `LINES: ${this.lines}`;
+        this.ui.speed.textContent = `SPEED: ${(1 / this.currentFallInterval).toFixed(1)}`;
+    }
+
+    getGhostDropDistance() {
+        if (!this.activePiece) return 0;
+        let drop = 0;
+        while (!this.collides(this.activePiece, 0, drop + 1, this.activePiece.rotation)) {
+            drop++;
+        }
+        return drop;
+    }
+
+    drawBlock(gridX, gridY, color, alpha = 1) {
+        if (gridY < 0) return;
+        const px = this.boardX + gridX * CELL_SIZE;
+        const py = this.boardY + gridY * CELL_SIZE;
+
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+
+        this.ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+        this.ctx.fillRect(px + 2, py + 2, CELL_SIZE - 4, 4);
+
+        this.ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+        this.ctx.fillRect(px + 2, py + CELL_SIZE - 6, CELL_SIZE - 4, 3);
+
+        this.ctx.strokeStyle = "rgba(10, 14, 26, 0.45)";
+        this.ctx.strokeRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+        this.ctx.globalAlpha = 1;
+    }
+
+    drawMiniBlock(px, py, size, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
+        this.ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+        this.ctx.fillRect(px + 2, py + 2, size - 4, 3);
+        this.ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+        this.ctx.fillRect(px + 2, py + size - 5, size - 4, 2);
+        this.ctx.strokeStyle = "rgba(5, 8, 16, 0.5)";
+        this.ctx.strokeRect(px + 0.5, py + 0.5, size - 1, size - 1);
+    }
+
+    renderBackground() {
+        const shimmer = 0.06 + 0.05 * Math.sin(this.visualTime * 2.4);
+        this.ctx.fillStyle = `rgba(137, 166, 255, ${shimmer})`;
+        for (let y = 0; y < CANVAS_HEIGHT; y += 24) {
+            this.ctx.fillRect(0, y, CANVAS_WIDTH, 1);
+        }
+
+        this.ctx.fillStyle = "rgba(6, 10, 19, 0.4)";
+        this.ctx.fillRect(this.boardX - 12, this.boardY - 12, this.boardWidth + 24, this.boardHeight + 24);
+
+        this.ctx.fillStyle = "rgba(17, 27, 51, 0.95)";
+        this.ctx.fillRect(this.boardX, this.boardY, this.boardWidth, this.boardHeight);
+
+        this.ctx.strokeStyle = "rgba(120, 152, 224, 0.5)";
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(this.boardX - 1, this.boardY - 1, this.boardWidth + 2, this.boardHeight + 2);
+
+        this.ctx.strokeStyle = "rgba(84, 106, 160, 0.2)";
+        this.ctx.lineWidth = 1;
+        for (let c = 1; c < BOARD_COLS; c++) {
+            const x = this.boardX + c * CELL_SIZE;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + 0.5, this.boardY);
+            this.ctx.lineTo(x + 0.5, this.boardY + this.boardHeight);
+            this.ctx.stroke();
+        }
+        for (let r = 1; r < BOARD_ROWS; r++) {
+            const y = this.boardY + r * CELL_SIZE;
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.boardX, y + 0.5);
+            this.ctx.lineTo(this.boardX + this.boardWidth, y + 0.5);
+            this.ctx.stroke();
+        }
+    }
+
+    renderBoardCells() {
+        for (let y = 0; y < BOARD_ROWS; y++) {
+            for (let x = 0; x < BOARD_COLS; x++) {
+                const color = this.grid[y][x];
+                if (!color) continue;
+                this.drawBlock(x, y, color, 1);
+            }
+        }
+    }
+
+    renderGhostPiece() {
+        if (!this.activePiece || this.state !== GAME_STATE.PLAYING) return;
+        const drop = this.getGhostDropDistance();
+        if (drop <= 0) return;
+
+        const cells = this.activePiece.getCells(this.activePiece.rotation, this.activePiece.x, this.activePiece.y + drop);
+        cells.forEach((cell) => this.drawBlock(cell.x, cell.y, this.activePiece.color, 0.24));
+    }
+
+    renderActivePiece() {
+        if (!this.activePiece || this.state !== GAME_STATE.PLAYING) return;
+        this.activePiece.getCells().forEach((cell) => this.drawBlock(cell.x, cell.y, this.activePiece.color, 1));
+    }
+
+    renderNextPreview() {
+        const panelW = 130;
+        const panelH = 132;
+        const panelX = this.boardX + this.boardWidth + 22;
+        const panelY = this.boardY + 22;
+
+        this.ctx.fillStyle = "rgba(11, 18, 36, 0.82)";
+        this.ctx.fillRect(panelX, panelY, panelW, panelH);
+        this.ctx.strokeStyle = "rgba(104, 132, 201, 0.45)";
+        this.ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+
+        this.ctx.fillStyle = "#dde8ff";
+        this.ctx.font = "700 16px Segoe UI";
+        this.ctx.fillText("NEXT", panelX + 42, panelY + 24);
+
+        if (!this.nextType) return;
+        const def = PIECE_DEFS[this.nextType];
+        const shape = def.rotations[0];
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        for (const [x, y] of shape) {
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+        }
+
+        const miniSize = 18;
+        const width = (maxX - minX + 1) * miniSize;
+        const height = (maxY - minY + 1) * miniSize;
+        const originX = panelX + Math.floor((panelW - width) / 2);
+        const originY = panelY + 44 + Math.floor((panelH - 56 - height) / 2);
+
+        shape.forEach(([cx, cy]) => {
+            const px = originX + (cx - minX) * miniSize;
+            const py = originY + (cy - minY) * miniSize;
+            this.drawMiniBlock(px, py, miniSize, def.color);
+        });
+    }
+
+    renderLeftInfo() {
+        const panelX = this.boardX - 152;
+        const panelY = this.boardY + 22;
+        const panelW = 130;
+        const panelH = 170;
+
+        this.ctx.fillStyle = "rgba(11, 18, 36, 0.82)";
+        this.ctx.fillRect(panelX, panelY, panelW, panelH);
+        this.ctx.strokeStyle = "rgba(104, 132, 201, 0.45)";
+        this.ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+
+        this.ctx.fillStyle = "#dce7ff";
+        this.ctx.font = "700 15px Segoe UI";
+        this.ctx.fillText("ARENA", panelX + 36, panelY + 24);
+
+        this.ctx.font = "600 13px Segoe UI";
+        this.ctx.fillStyle = "#b7c5e6";
+        this.ctx.fillText("Clear full rows.", panelX + 14, panelY + 52);
+        this.ctx.fillText("New piece locks", panelX + 14, panelY + 74);
+        this.ctx.fillText("every collision.", panelX + 14, panelY + 92);
+
+        this.ctx.fillStyle = "#9fb4df";
+        this.ctx.fillText("1 line: +100", panelX + 14, panelY + 126);
+        this.ctx.fillText("2 lines: +300", panelX + 14, panelY + 144);
+        this.ctx.fillText("3 lines: +500", panelX + 14, panelY + 162);
+    }
+
+    renderEffects() {
+        this.effects.forEach((effect) => effect.render(this.ctx));
+    }
+
+    render() {
+        this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        this.renderBackground();
+        this.renderLeftInfo();
+        this.renderNextPreview();
+        this.renderBoardCells();
+        this.renderGhostPiece();
+        this.renderActivePiece();
+        this.renderEffects();
+    }
+
+    loop(timestamp) {
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+        this.visualTime += dt;
+
+        this.update(dt);
+        this.render();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+}
+
+/**
+ * ==========================================
+ * 5. INITIALIZATION
+ * ==========================================
+ */
+
+window.addEventListener("load", () => {
+    const canvas = document.getElementById("gameCanvas");
+    new Game(canvas);
+});
+</script>
+</body>
+</html>
