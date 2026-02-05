@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zombie Survival Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+ 
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+ 
+        canvas {
+            background-color: #2d2d2d;
+            border: 4px solid #444;
+            display: block;
+            cursor: crosshair;
+        }
+ 
+        #uiLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+ 
+        .hud-text {
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+        }
+ 
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            z-index: 10;
+        }
+ 
+        .hidden {
+            display: none !important;
+        }
+ 
+        h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            color: #e74c3c;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 3px 3px 0 #000;
+        }
+ 
+        p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            color: #ccc;
+        }
+ 
+        button {
+            padding: 15px 40px;
+            font-size: 20px;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+ 
+        button:hover {
+            background-color: #c0392b;
+            transform: scale(1.05);
+        }
+ 
+        button:active {
+            transform: scale(0.95);
+        }
+ 
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #888;
+        }
+ 
+        .key {
+            display: inline-block;
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border-bottom: 2px solid #222;
+            color: #fff;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+ 
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        
+        <div id="uiLayer">
+            <div id="scoreDisplay" class="hud-text">SCORE: 0</div>
+            <div id="healthDisplay" class="hud-text" style="color: #2ecc71;">HEALTH: 100%</div>
+        </div>
+ 
+        <div id="startScreen">
+            <h1>Zombie Outbreak</h1>
+            <p>Survive as long as you can.</p>
+            <button id="startBtn">Play Game</button>
+            <div class="controls">
+                Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> &nbsp;|&nbsp; Aim: <span class="key">Mouse</span> &nbsp;|&nbsp; Shoot: <span class="key">Click</span>
+            </div>
+        </div>
+ 
+        <div id="gameOverScreen" class="hidden">
+            <h1 style="color: #c0392b;">YOU DIED</h1>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <button id="restartBtn">Try Again</button>
+        </div>
+    </div>
+ 
+<script>
+/**
+ * ==========================================
+ * 1. UTILITY CLASSES
+ * ==========================================
+ */
+ 
+class Vector2 {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+ 
+    add(v) { return new Vector2(this.x + v.x, this.y + v.y); }
+    sub(v) { return new Vector2(this.x - v.x, this.y - v.y); }
+    mult(n) { return new Vector2(this.x * n, this.y * n); }
+    
+    mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+    
+    normalize() {
+        const m = this.mag();
+        return m === 0 ? new Vector2(0, 0) : new Vector2(this.x / m, this.y / m);
+    }
+ 
+    static distance(v1, v2) {
+        return Math.sqrt(Math.pow(v2.x - v1.x, 2) + Math.pow(v2.y - v1.y, 2));
+    }
+}
+ 
+class InputManager {
+    constructor(canvas) {
+        this.keys = {};
+        this.mousePos = new Vector2(0, 0);
+        this.mouseDown = false;
+        this.canvas = canvas;
+ 
+        // Keyboard listeners
+        window.addEventListener('keydown', (e) => this.keys[e.code] = true);
+        window.addEventListener('keyup', (e) => this.keys[e.code] = false);
+ 
+        // Mouse listeners
+        window.addEventListener('mousemove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mousePos.x = e.clientX - rect.left;
+            this.mousePos.y = e.clientY - rect.top;
+        });
+ 
+        window.addEventListener('mousedown', () => this.mouseDown = true);
+        window.addEventListener('mouseup', () => this.mouseDown = false);
+    }
+ 
+    isKeyDown(code) { return !!this.keys[code]; }
+    getMousePos() { return this.mousePos; }
+    isMouseDown() { return this.mouseDown; }
+}
+ 
+/**
+ * ==========================================
+ * 2. BASE GAME OBJECT CLASS
+ * ==========================================
+ */
+ 
+class GameObject {
+    constructor(x, y, radius, color) {
+        this.pos = new Vector2(x, y);
+        this.radius = radius;
+        this.color = color;
+        this.markedForDeletion = false;
+    }
+ 
+    update(dt) {
+        // Base update logic
+    }
+ 
+    render(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
+    }
+ 
+    getBounds() {
+        return { x: this.pos.x, y: this.pos.y, radius: this.radius };
+    }
+}
+ 
+/**
+ * ==========================================
+ * 3. GAME ENTITIES
+ * ==========================================
+ */
+ 
+class Player extends GameObject {
+    constructor(x, y) {
+        super(x, y, 15, '#3498db'); // Blue
+        this.speed = 200;
+        this.health = 100;
+        this.angle = 0;
+        
+        // Gun properties
+        this.lastShotTime = 0;
+        this.fireRate = 0.15; // Seconds between shots
+        this.gunLength = 25;
+    }
+ 
+    update(dt, input) {
+        // Movement
+        let moveDir = new Vector2(0, 0);
+        if (input.isKeyDown('KeyW')) moveDir.y -= 1;
+        if (input.isKeyDown('KeyS')) moveDir.y += 1;
+        if (input.isKeyDown('KeyA')) moveDir.x -= 1;
+        if (input.isKeyDown('KeyD')) moveDir.x += 1;
+ 
+        if (moveDir.mag() > 0) {
+            moveDir = moveDir.normalize().mult(this.speed * dt);
+            this.pos = this.pos.add(moveDir);
+        }
+ 
+        // Clamp to screen
+        this.pos.x = Math.max(this.radius, Math.min(640 - this.radius, this.pos.x));
+        this.pos.y = Math.max(this.radius, Math.min(480 - this.radius, this.pos.y));
+ 
+        // Rotation (Look at mouse)
+        const mouse = input.getMousePos();
+        const dir = mouse.sub(this.pos);
+        this.angle = Math.atan2(dir.y, dir.x);
+    }
+ 
+    tryShoot(time, game) {
+        if (time - this.lastShotTime > this.fireRate) {
+            this.lastShotTime = time;
+            
+            // Calculate bullet spawn position (tip of gun)
+            const gunTipX = this.pos.x + Math.cos(this.angle) * this.gunLength;
+            const gunTipY = this.pos.y + Math.sin(this.angle) * this.gunLength;
+            
+            const bulletVel = new Vector2(Math.cos(this.angle), Math.sin(this.angle)).mult(600);
+            
+            game.addBullet(new Bullet(gunTipX, gunTipY, bulletVel));
+            
+            // Recoil effect
+            const recoil = new Vector2(Math.cos(this.angle), Math.sin(this.angle)).mult(-2);
+            this.pos = this.pos.add(recoil);
+            
+            return true;
+        }
+        return false;
+    }
+ 
+    render(ctx) {
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+ 
+        // Draw Gun
+        ctx.fillStyle = '#95a5a6';
+        ctx.fillRect(0, -5, this.gunLength, 10);
+ 
+        // Draw Body
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.strokeStyle = '#2980b9';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.closePath();
+ 
+        ctx.restore();
+    }
+}
+ 
+class Zombie extends GameObject {
+    constructor(x, y, player) {
+        super(x, y, 15, '#2ecc71'); // Green
+        this.player = player;
+        this.baseSpeed = 80 + Math.random() * 40;
+        this.speed = this.baseSpeed;
+        this.damage = 10;
+        
+        // Wobble effect
+        this.timeOffset = Math.random() * 100;
+    }
+ 
+    update(dt) {
+        const dir = this.player.pos.sub(this.pos);
+        const dist = dir.mag();
+        
+        // Simple AI: Move towards player
+        if (dist > 0) {
+            // Add some wobble to movement
+            const wobble = Math.sin(Date.now() / 200 + this.timeOffset) * 0.5;
+            
+            const moveVec = dir.normalize().mult(this.speed * dt);
+            
+            // Apply perpendicular wobble
+            const perp = new Vector2(-moveVec.y * wobble, moveVec.x * wobble);
+            
+            this.pos = this.pos.add(moveVec).add(perp);
+        }
+    }
+ 
+    render(ctx) {
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        // Rotate towards player
+        const dir = this.player.pos.sub(this.pos);
+        const angle = Math.atan2(dir.y, dir.x);
+        ctx.rotate(angle);
+ 
+        // Draw Zombie Body (Square-ish)
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-13, -13, 26, 26);
+        
+        // Eyes
+        ctx.fillStyle = '#c0392b'; // Red eyes
+        ctx.beginPath();
+        ctx.arc(5, -5, 3, 0, Math.PI*2);
+        ctx.arc(5, 5, 3, 0, Math.PI*2);
+        ctx.fill();
+ 
+        ctx.restore();
+    }
+}
+ 
+class Bullet extends GameObject {
+    constructor(x, y, velocity) {
+        super(x, y, 4, '#f1c40f'); // Yellow
+        this.velocity = velocity;
+    }
+ 
+    update(dt) {
+        this.pos = this.pos.add(this.velocity.mult(dt));
+ 
+        // Delete if out of bounds
+        if (this.pos.x < 0 || this.pos.x > 640 || this.pos.y < 0 || this.pos.y > 480) {
+            this.markedForDeletion = true;
+        }
+    }
+ 
+    render(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        // Trail
+        ctx.strokeStyle = 'rgba(241, 196, 15, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(this.pos.x, this.pos.y);
+        ctx.lineTo(this.pos.x - this.velocity.x * 0.05, this.pos.y - this.velocity.y * 0.05);
+        ctx.stroke();
+    }
+}
+ 
+class Particle extends GameObject {
+    constructor(x, y, color) {
+        super(x, y, Math.random() * 3 + 1, color);
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 100 + 20;
+        this.velocity = new Vector2(Math.cos(angle), Math.sin(angle)).mult(speed);
+        this.life = 1.0; // 1 second life
+        this.decay = Math.random() * 2 + 1;
+    }
+ 
+    update(dt) {
+        this.pos = this.pos.add(this.velocity.mult(dt));
+        this.life -= dt * this.decay;
+        this.velocity = this.velocity.mult(0.95); // Friction
+        if (this.life <= 0) this.markedForDeletion = true;
+    }
+ 
+    render(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        super.render(ctx);
+        ctx.globalAlpha = 1.0;
+    }
+}
+ 
+/**
+ * ==========================================
+ * 4. GAME MANAGER CLASS
+ * ==========================================
+ */
+ 
+class Game {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.input = new InputManager(canvas);
+        
+        this.width = canvas.width;
+        this.height = canvas.height;
+ 
+        this.lastTime = 0;
+        this.accumulator = 0;
+        this.step = 1/60;
+        
+        this.isRunning = false;
+        this.isGameOver = false;
+ 
+        // UI Elements
+        this.uiScore = document.getElementById('scoreDisplay');
+        this.uiHealth = document.getElementById('healthDisplay');
+        this.startScreen = document.getElementById('startScreen');
+        this.gameOverScreen = document.getElementById('gameOverScreen');
+        this.finalScoreDisplay = document.getElementById('finalScore');
+ 
+        // Bind buttons
+        document.getElementById('startBtn').addEventListener('click', () => this.start());
+        document.getElementById('restartBtn').addEventListener('click', () => this.start());
+    }
+ 
+    start() {
+        this.reset();
+        this.isRunning = true;
+        this.isGameOver = false;
+        this.startScreen.classList.add('hidden');
+        this.gameOverScreen.classList.add('hidden');
+        this.lastTime = performance.now();
+        requestAnimationFrame((ts) => this.loop(ts));
+    }
+ 
+    reset() {
+        this.player = new Player(this.width / 2, this.height / 2);
+        this.bullets = [];
+        this.zombies = [];
+        this.particles = [];
+        this.score = 0;
+        this.spawnTimer = 0;
+        this.spawnInterval = 2.0; // Seconds
+        this.difficultyTimer = 0;
+        this.updateUI();
+    }
+ 
+    addBullet(bullet) {
+        this.bullets.push(bullet);
+    }
+ 
+    spawnZombie() {
+        // Spawn at edge
+        let x, y;
+        if (Math.random() < 0.5) {
+            x = Math.random() < 0.5 ? -30 : this.width + 30;
+            y = Math.random() * this.height;
+        } else {
+            x = Math.random() * this.width;
+            y = Math.random() < 0.5 ? -30 : this.height + 30;
+        }
+        this.zombies.push(new Zombie(x, y, this.player));
+    }
+ 
+    spawnBlood(x, y) {
+        for(let i=0; i<8; i++) {
+            this.particles.push(new Particle(x, y, '#c0392b'));
+        }
+    }
+ 
+    update(dt) {
+        if (!this.isRunning || this.isGameOver) return;
+ 
+        // Player Logic
+        this.player.update(dt, this.input);
+        if (this.input.isMouseDown()) {
+            this.player.tryShoot(performance.now() / 1000, this);
+        }
+ 
+        // Spawning Logic
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) {
+            this.spawnZombie();
+            this.spawnTimer = this.spawnInterval;
+        }
+ 
+        // Difficulty Ramp
+        this.difficultyTimer += dt;
+        if (this.difficultyTimer > 5) { // Every 5 seconds, get harder
+            this.spawnInterval = Math.max(0.3, this.spawnInterval * 0.95);
+            this.difficultyTimer = 0;
+        }
+ 
+        // Entity Updates
+        this.bullets.forEach(b => b.update(dt));
+        this.zombies.forEach(z => z.update(dt));
+        this.particles.forEach(p => p.update(dt));
+ 
+        this.checkCollisions();
+        this.cleanup();
+    }
+ 
+    checkCollisions() {
+        // Bullet vs Zombie
+        for (let b of this.bullets) {
+            for (let z of this.zombies) {
+                if (!b.markedForDeletion && !z.markedForDeletion) {
+                    if (Vector2.distance(b.pos, z.pos) < b.radius + z.radius + 5) {
+                        b.markedForDeletion = true;
+                        z.markedForDeletion = true;
+                        this.score += 10;
+                        this.spawnBlood(z.pos.x, z.pos.y);
+                        this.updateUI();
+                    }
+                }
+            }
+        }
+ 
+        // Zombie vs Player
+        for (let z of this.zombies) {
+            if (!z.markedForDeletion) {
+                if (Vector2.distance(z.pos, this.player.pos) < z.radius + this.player.radius - 5) {
+                    this.player.health -= z.damage;
+                    z.markedForDeletion = true; // Suicide bomber zombie
+                    this.spawnBlood(this.player.pos.x, this.player.pos.y);
+                    this.updateUI();
+                    
+                    // Screen shake effect (simple offset)
+                    this.ctx.translate(Math.random()*10-5, Math.random()*10-5);
+                    setTimeout(() => this.ctx.setTransform(1,0,0,1,0,0), 50);
+ 
+                    if (this.player.health <= 0) {
+                        this.gameOver();
+                    }
+                }
+            }
+        }
+    }
+ 
+    cleanup() {
+        this.bullets = this.bullets.filter(b => !b.markedForDeletion);
+        this.zombies = this.zombies.filter(z => !z.markedForDeletion);
+        this.particles = this.particles.filter(p => !p.markedForDeletion);
+    }
+ 
+    updateUI() {
+        this.uiScore.innerText = `SCORE: ${this.score}`;
+        this.uiHealth.innerText = `HEALTH: ${Math.max(0, this.player.health)}%`;
+        
+        // Color health based on value
+        if (this.player.health > 60) this.uiHealth.style.color = '#2ecc71';
+        else if (this.player.health > 30) this.uiHealth.style.color = '#f1c40f';
+        else this.uiHealth.style.color = '#e74c3c';
+    }
+ 
+    gameOver() {
+        this.isGameOver = true;
+        this.finalScoreDisplay.innerText = this.score;
+        this.gameOverScreen.classList.remove('hidden');
+    }
+ 
+    render() {
+        // Clear background
+        this.ctx.fillStyle = '#2d2d2d';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+ 
+        // Draw Grid (for depth)
+        this.ctx.strokeStyle = '#383838';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        for(let x=0; x<=this.width; x+=40) { this.ctx.moveTo(x,0); this.ctx.lineTo(x,this.height); }
+        for(let y=0; y<=this.height; y+=40) { this.ctx.moveTo(0,y); this.ctx.lineTo(this.width,y); }
+        this.ctx.stroke();
+ 
+        if (this.isRunning) {
+            this.particles.forEach(p => p.render(this.ctx));
+            this.bullets.forEach(b => b.render(this.ctx));
+            this.player.render(this.ctx); // Draw player on top of bullets/particles
+            this.zombies.forEach(z => z.render(this.ctx)); // Zombies on top
+        }
+    }
+ 
+    loop(timestamp) {
+        if (!this.isRunning) return;
+ 
+        let dt = (timestamp - this.lastTime) / 1000;
+        this.lastTime = timestamp;
+ 
+        // Cap dt to prevent huge jumps if tab is inactive
+        if (dt > 0.1) dt = 0.1;
+ 
+        this.update(dt);
+        this.render();
+ 
+        if (!this.isGameOver) {
+            requestAnimationFrame((ts) => this.loop(ts));
+        }
+    }
+}
+ 
+/**
+ * ==========================================
+ * 5. INITIALIZATION
+ * ==========================================
+ */
+window.onload = () => {
+    const canvas = document.getElementById('gameCanvas');
+    const game = new Game(canvas);
+    // Game waits for user to click "Play Game"
+};
+ 
+</script>
+</body>
+</html>

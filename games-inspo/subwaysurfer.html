@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subway Runner 3D</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+ 
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 4px solid #fff;
+        }
+ 
+        canvas {
+            display: block;
+            background-color: #87CEEB; /* Sky Blue */
+        }
+ 
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+ 
+        .hud-top {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+        }
+ 
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            pointer-events: auto;
+            text-align: center;
+        }
+ 
+        h1 { font-size: 48px; margin-bottom: 10px; color: #ffeb3b; text-shadow: 3px 3px 0 #d32f2f; }
+        p { font-size: 18px; margin-bottom: 20px; }
+        .btn {
+            background: #ffeb3b;
+            color: #333;
+            padding: 15px 30px;
+            font-size: 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 5px 0 #fbc02d;
+            transition: transform 0.1s;
+        }
+        .btn:active { transform: translateY(5px); box-shadow: none; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+ 
+<div id="game-container">
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+    
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div id="score-display">SCORE: 0</div>
+            <div id="coins-display">COINS: 0</div>
+        </div>
+    </div>
+ 
+    <div id="start-screen">
+        <h1>SUBWAY RUNNER</h1>
+        <p>Use ARROW KEYS or WASD to Move</p>
+        <p>UP to Jump | DOWN to Roll | LEFT/RIGHT to Switch Lanes</p>
+        <button class="btn" id="start-btn">PLAY NOW</button>
+    </div>
+ 
+    <div id="game-over-screen" class="hidden">
+        <h1>CRASHED!</h1>
+        <p id="final-score">Score: 0</p>
+        <button class="btn" id="restart-btn">TRY AGAIN</button>
+    </div>
+</div>
+ 
+<script>
+/**
+ * 3D PROJECTION UTILITY
+ * Handles mapping 3D world coordinates to 2D canvas coordinates
+ */
+class Projection {
+    static VP_X = 320; // Vanishing Point X
+    static VP_Y = 120; // Vanishing Point Y
+    static FOCAL_LENGTH = 300;
+    static GROUND_Y = 400; // Visual ground level at Z=0
+    static LANE_WIDTH = 120; // Width of lanes at Z=0
+ 
+    static project(x, y, z) {
+        // Camera is at Z=0. Objects move towards 0 from positive Z? 
+        // Let's do: Player at Z=0. Objects at Z > 0.
+        // Scale factor based on Z depth
+        // We want Z=0 to be scale 1, Z=Far to be scale 0
+        
+        // Render Logic: We render objects from Z_FAR down to Z_NEAR
+        // Let's say Z goes from 0 (camera) to 2000 (horizon)
+        // But in this game, objects come TOWARDS camera.
+        // Let's define: Camera at -300. Player at 0. Objects spawn at 2000.
+        
+        const cameraZ = -300;
+        const depth = z - cameraZ;
+        
+        if (depth <= 0) return null; // Behind camera
+ 
+        const scale = Projection.FOCAL_LENGTH / depth;
+        
+        const screenX = Projection.VP_X + (x * scale);
+        const screenY = Projection.VP_Y + (y * scale);
+        
+        return { x: screenX, y: screenY, scale: scale };
+    }
+ 
+    // Helper to get X position for a specific lane (-1, 0, 1)
+    static getLaneX(laneIndex) {
+        return (laneIndex - 1) * Projection.LANE_WIDTH;
+    }
+}
+ 
+/**
+ * INPUT MANAGER
+ * Handles keyboard input
+ */
+class InputManager {
+    constructor() {
+        this.keys = {};
+        this.down = {}; // Keys currently held
+        this.pressed = {}; // Keys pressed this frame
+ 
+        window.addEventListener('keydown', (e) => {
+            this.keys[e.code] = true;
+            if (!this.down[e.code]) {
+                this.pressed[e.code] = true;
+                this.down[e.code] = true;
+            }
+        });
+ 
+        window.addEventListener('keyup', (e) => {
+            this.keys[e.code] = false;
+            this.down[e.code] = false;
+            this.pressed[e.code] = false;
+        });
+    }
+ 
+    isPressed(code) {
+        return this.pressed[code];
+    }
+ 
+    update() {
+        // Clear "just pressed" state at end of frame
+        for (let code in this.pressed) {
+            this.pressed[code] = false;
+        }
+    }
+}
+ 
+/**
+ * BASE GAME OBJECT
+ */
+class GameObject {
+    constructor(lane, z) {
+        this.lane = lane; // -1 (Left), 0 (Center), 1 (Right)
+        this.x = Projection.getLaneX(lane);
+        this.y = 200; // World Y (positive is down, relative to horizon)
+        this.z = z;
+        this.width = 60;
+        this.height = 60;
+        this.color = '#fff';
+        this.markedForDeletion = false;
+    }
+ 
+    update(dt, speed) {
+        this.z -= speed * dt;
+        if (this.z < -200) { // Passed the camera
+            this.markedForDeletion = true;
+        }
+    }
+ 
+    render(ctx) {
+        // Base render (override in children)
+    }
+ 
+    getBounds() {
+        // Simple AABB for collision logic
+        // We treat the game as a grid for collision mostly
+        return {
+            lane: Math.round(this.lane), // Round to handle player transition
+            z: this.z,
+            y: this.y,
+            height: this.height,
+            width: this.width
+        };
+    }
+}
+ 
+/**
+ * PLAYER CLASS
+ */
+class Player extends GameObject {
+    constructor() {
+        super(0, 0); // Lane 0, Z 0
+        this.targetLane = 0;
+        this.laneX = 0; // Actual interpolated X position
+        
+        // Physics
+        this.y = 250; // Ground level Y in world space
+        this.groundY = 250;
+        this.velocityY = 0;
+        this.gravity = 1500;
+        this.jumpForce = -700;
+        
+        this.isJumping = false;
+        this.isRolling = false;
+        this.rollTimer = 0;
+        this.rollDuration = 0.8;
+        
+        this.color = '#00BCD4'; // Cyan
+        this.width = 50;
+        this.height = 100; // Tall
+    }
+ 
+    update(dt, input) {
+        // Lane Switching
+        if (input.isPressed('ArrowLeft') || input.isPressed('KeyA')) {
+            if (this.targetLane > 0) this.targetLane--;
+        }
+        if (input.isPressed('ArrowRight') || input.isPressed('KeyD')) {
+            if (this.targetLane < 2) this.targetLane++;
+        }
+ 
+        // Smooth X movement
+        const targetX = Projection.getLaneX(this.targetLane);
+        this.laneX += (targetX - this.laneX) * 15 * dt;
+        this.lane = this.targetLane; // For collision logic, we snap, but render smooth
+ 
+        // Jumping
+        if ((input.isPressed('ArrowUp') || input.isPressed('KeyW')) && !this.isJumping && !this.isRolling) {
+            this.velocityY = this.jumpForce;
+            this.isJumping = true;
+        }
+ 
+        // Rolling
+        if ((input.isPressed('ArrowDown') || input.isPressed('KeyS')) && !this.isRolling && !this.isJumping) {
+            this.isRolling = true;
+            this.rollTimer = this.rollDuration;
+            this.height = 50; // Shrink
+            this.y = 300; // Move down slightly visually if needed, or just shrink
+        }
+ 
+        if (this.isRolling) {
+            this.rollTimer -= dt;
+            if (this.rollTimer <= 0) {
+                this.isRolling = false;
+                this.height = 100; // Restore height
+                this.y = this.groundY;
+            }
+        }
+ 
+        // Apply Gravity
+        if (this.isJumping) {
+            this.y += this.velocityY * dt;
+            this.velocityY += this.gravity * dt;
+ 
+            if (this.y >= this.groundY) {
+                this.y = this.groundY;
+                this.isJumping = false;
+                this.velocityY = 0;
+            }
+        }
+    }
+ 
+    render(ctx) {
+        // Project 3D position to 2D
+        const p = Projection.project(this.laneX, this.y, this.z);
+        if (!p) return;
+ 
+        // Draw Shadow
+        const shadowP = Projection.project(this.laneX, this.groundY, this.z);
+        if (shadowP) {
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.ellipse(shadowP.x, shadowP.y, 20 * shadowP.scale, 10 * shadowP.scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+ 
+        // Draw Player Body (Simple Box)
+        const w = this.width * p.scale;
+        const h = this.height * p.scale;
+        
+        // Draw slightly above the point so the point is the feet
+        const drawX = p.x - w / 2;
+        const drawY = p.y - h;
+ 
+        ctx.fillStyle = this.color;
+        ctx.fillRect(drawX, drawY, w, h);
+ 
+        // Draw Head/Hoodie details
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(drawX + w*0.2, drawY + h*0.1, w*0.6, h*0.2);
+        
+        // Draw Legs (visual separation)
+        ctx.fillStyle = '#008ba3';
+        ctx.fillRect(drawX + w*0.1, drawY + h*0.6, w*0.3, h*0.4);
+        ctx.fillRect(drawX + w*0.6, drawY + h*0.6, w*0.3, h*0.4);
+    }
+    
+    getCollisionBox() {
+        return {
+            lane: this.targetLane, // Use target lane to be forgiving
+            z: this.z,
+            y: this.y, // Current Y (changes with jump)
+            h: this.height // Current Height (changes with roll)
+        };
+    }
+}
+ 
+/**
+ * OBSTACLE CLASS
+ * Barriers, Trains, etc.
+ */
+class Obstacle extends GameObject {
+    constructor(lane, z, type) {
+        super(lane, z);
+        this.type = type; // 'high', 'low', 'train'
+        
+        if (type === 'train') {
+            this.width = 100;
+            this.height = 120;
+            this.color = '#D32F2F'; // Red
+            this.y = 250; // Ground
+        } else if (type === 'low') {
+            // Jump over this
+            this.width = 100;
+            this.height = 40;
+            this.color = '#795548'; // Wood
+            this.y = 250; // Ground
+        } else if (type === 'high') {
+            // Roll under this
+            this.width = 120;
+            this.height = 80;
+            this.color = '#555'; // Metal
+            this.y = 150; // Floating
+        }
+    }
+ 
+    render(ctx) {
+        const p = Projection.project(this.x, this.y, this.z);
+        if (!p) return;
+ 
+        const w = this.width * p.scale;
+        const h = this.height * p.scale;
+        const drawX = p.x - w / 2;
+        const drawY = p.y - h;
+ 
+        // 3D Effect: Draw Front Face
+        ctx.fillStyle = this.color;
+        ctx.fillRect(drawX, drawY, w, h);
+        
+        // Simple shading border
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(drawX, drawY, w, h);
+ 
+        // Details based on type
+        if (this.type === 'train') {
+            ctx.fillStyle = '#FFEB3B'; // Lights
+            ctx.fillRect(drawX + w*0.1, drawY + h*0.7, w*0.2, h*0.1);
+            ctx.fillRect(drawX + w*0.7, drawY + h*0.7, w*0.2, h*0.1);
+            ctx.fillStyle = '#333'; // Window
+            ctx.fillRect(drawX + w*0.1, drawY + h*0.1, w*0.8, h*0.4);
+        } else if (this.type === 'low') {
+            ctx.fillStyle = '#5D4037';
+            ctx.fillRect(drawX, drawY, w, h*0.2); // Top bar
+        }
+    }
+}
+ 
+/**
+ * COIN CLASS
+ */
+class Coin extends GameObject {
+    constructor(lane, z) {
+        super(lane, z);
+        this.y = 220; // Float slightly
+        this.width = 40;
+        this.height = 40;
+        this.angle = 0;
+    }
+ 
+    update(dt, speed) {
+        super.update(dt, speed);
+        this.angle += 5 * dt;
+    }
+ 
+    render(ctx) {
+        const p = Projection.project(this.x, this.y, this.z);
+        if (!p) return;
+ 
+        const s = p.scale;
+        const w = (Math.sin(this.angle) * 20 + 20) * s; // Spin width effect
+        const h = 40 * s;
+ 
+        ctx.fillStyle = '#FFD700'; // Gold
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - h/2, Math.abs(Math.sin(this.angle) * 15 * s), 15 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#FFA000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
+ 
+/**
+ * PARTICLE SYSTEM
+ */
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 10;
+        this.vy = (Math.random() - 0.5) * 10;
+        this.life = 1.0;
+        this.color = color;
+    }
+    update(dt) {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= dt * 2;
+    }
+    render(ctx) {
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 5, 5);
+        ctx.globalAlpha = 1;
+    }
+}
+ 
+/**
+ * MAIN GAME MANAGER
+ */
+class Game {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+        this.input = new InputManager();
+        
+        this.entities = [];
+        this.particles = [];
+        this.player = null;
+        
+        this.score = 0;
+        this.coins = 0;
+        this.gameSpeed = 400;
+        this.isRunning = false;
+        
+        this.spawnTimer = 0;
+        this.lastTime = 0;
+        
+        // UI Elements
+        this.scoreEl = document.getElementById('score-display');
+        this.coinsEl = document.getElementById('coins-display');
+        this.startScreen = document.getElementById('start-screen');
+        this.gameOverScreen = document.getElementById('game-over-screen');
+        this.finalScoreEl = document.getElementById('final-score');
+        
+        // Buttons
+        document.getElementById('start-btn').addEventListener('click', () => this.start());
+        document.getElementById('restart-btn').addEventListener('click', () => this.start());
+ 
+        // Initial render
+        this.renderWorld();
+    }
+ 
+    start() {
+        this.entities = [];
+        this.particles = [];
+        this.player = new Player();
+        this.score = 0;
+        this.coins = 0;
+        this.gameSpeed = 500;
+        this.spawnTimer = 0;
+        this.isRunning = true;
+        this.lastTime = performance.now();
+ 
+        this.startScreen.classList.add('hidden');
+        this.gameOverScreen.classList.add('hidden');
+        this.updateUI();
+ 
+        requestAnimationFrame((t) => this.loop(t));
+    }
+ 
+    gameOver() {
+        this.isRunning = false;
+        this.finalScoreEl.innerText = `Score: ${Math.floor(this.score)} | Coins: ${this.coins}`;
+        this.gameOverScreen.classList.remove('hidden');
+    }
+ 
+    spawnObstacle() {
+        const lane = Math.floor(Math.random() * 3); // 0, 1, 2
+        const spawnZ = 2500;
+        
+        const rand = Math.random();
+        let type = 'low';
+        if (rand > 0.7) type = 'train';
+        else if (rand > 0.4) type = 'high';
+        
+        // Don't spawn if too close to another obstacle in same lane
+        const tooClose = this.entities.some(e => 
+            e instanceof Obstacle && 
+            e.lane === lane && 
+            e.z > 1800
+        );
+ 
+        if (!tooClose) {
+            this.entities.push(new Obstacle(lane, spawnZ, type));
+            
+            // Maybe spawn coins in other lanes
+            const coinLane = (lane + 1) % 3;
+            for(let i=0; i<5; i++) {
+                this.entities.push(new Coin(coinLane, spawnZ + i * 150));
+            }
+        }
+    }
+ 
+    update(dt) {
+        // Increase speed gradually
+        this.gameSpeed += 5 * dt;
+        this.score += (this.gameSpeed / 100) * dt;
+ 
+        // Spawn logic
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) {
+            this.spawnObstacle();
+            this.spawnTimer = 1.5 - (this.gameSpeed / 2000); // Spawn faster as speed increases
+            if (this.spawnTimer < 0.6) this.spawnTimer = 0.6;
+        }
+ 
+        // Update Entities
+        this.player.update(dt, this.input);
+        
+        // Sort entities by Z (painters algorithm, far to near)
+        // Actually, we want to update all, check collisions, then sort for render
+        // But for collision, we check Player vs Entity
+        
+        const playerBox = this.player.getCollisionBox();
+ 
+        for (let i = this.entities.length - 1; i >= 0; i--) {
+            const e = this.entities[i];
+            e.update(dt, this.gameSpeed);
+ 
+            // Collision Check
+            // Z-depth overlap check (Player is at Z=0, approx depth 50)
+            if (e.z < 50 && e.z > -50 && e.lane === playerBox.lane) {
+                if (e instanceof Coin) {
+                    this.coins++;
+                    this.score += 50;
+                    this.createParticles(e.x, e.y, '#FFD700');
+                    e.markedForDeletion = true;
+                } else if (e instanceof Obstacle) {
+                    // Check vertical collision
+                    let hit = false;
+                    
+                    if (e.type === 'train') {
+                        // Train hits everything unless you are on top (not implemented) or separate lane
+                        hit = true; 
+                    } else if (e.type === 'low') {
+                        // Must be jumping
+                        if (playerBox.y > 200) hit = true; // Player Y is ground(250). Jump < 250.
+                    } else if (e.type === 'high') {
+                        // Must be rolling
+                        if (playerBox.h > 60) hit = true; // Player height 100 normally, 50 rolling
+                    }
+ 
+                    if (hit) {
+                        this.createParticles(this.player.laneX, this.player.y, '#F44336');
+                        this.gameOver();
+                        return;
+                    }
+                }
+            }
+ 
+            if (e.markedForDeletion) {
+                this.entities.splice(i, 1);
+            }
+        }
+        
+        // Particles
+        for(let i=this.particles.length-1; i>=0; i--) {
+            this.particles[i].update(dt);
+            if(this.particles[i].life <= 0) this.particles.splice(i, 1);
+        }
+ 
+        this.input.update();
+        this.updateUI();
+    }
+ 
+    createParticles(x, y, color) {
+        // Project world to screen for particle emission
+        const p = Projection.project(x, y, 0);
+        if(p) {
+            for(let i=0; i<10; i++) {
+                this.particles.push(new Particle(p.x, p.y, color));
+            }
+        }
+    }
+ 
+    render() {
+        // Clear background
+        this.ctx.fillStyle = '#87CEEB';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+ 
+        // Draw Ground / Horizon
+        this.ctx.fillStyle = '#81C784'; // Grass
+        this.ctx.fillRect(0, Projection.VP_Y, this.canvas.width, this.canvas.height - Projection.VP_Y);
+ 
+        // Draw Tracks (Perspective Lines)
+        this.renderTracks();
+ 
+        // Sort entities for Painter's Algorithm (Far Z to Near Z)
+        this.entities.sort((a, b) => b.z - a.z);
+ 
+        // Render Entities
+        // We need to render the player at the correct Z-index relative to obstacles
+        // Since player is always at Z=0, we render entities > 0, then player, then entities < 0?
+        // Actually, just insert player into a temporary render list
+        
+        const renderList = [...this.entities, this.player];
+        renderList.sort((a, b) => b.z - a.z);
+ 
+        renderList.forEach(e => e.render(this.ctx));
+ 
+        // Render Particles (Overlay)
+        this.particles.forEach(p => p.render(this.ctx));
+    }
+ 
+    renderTracks() {
+        const ctx = this.ctx;
+        const farZ = 3000;
+        
+        ctx.strokeStyle = '#5D4037'; // Rail color
+        ctx.lineWidth = 4;
+        
+        // Draw 3 Lanes
+        [-1, 0, 1].forEach(lane => {
+            const worldX = Projection.getLaneX(lane);
+            
+            // Left Rail
+            const p1Start = Projection.project(worldX - 40, 250, 0);
+            const p1End = Projection.project(worldX - 40, 250, farZ);
+            
+            // Right Rail
+            const p2Start = Projection.project(worldX + 40, 250, 0);
+            const p2End = Projection.project(worldX + 40, 250, farZ);
+ 
+            if (p1Start && p1End) {
+                ctx.beginPath();
+                ctx.moveTo(p1Start.x, p1Start.y);
+                ctx.lineTo(p1End.x, p1End.y);
+                ctx.stroke();
+            }
+            if (p2Start && p2End) {
+                ctx.beginPath();
+                ctx.moveTo(p2Start.x, p2Start.y);
+                ctx.lineTo(p2End.x, p2End.y);
+                ctx.stroke();
+            }
+ 
+            // Ties (Sleepers)
+            ctx.fillStyle = '#3E2723';
+            // Moving ties effect
+            const offset = (Date.now() * (this.gameSpeed/1000)) % 100;
+            
+            for(let z = 0; z < farZ; z+=100) {
+                const drawZ = z - offset;
+                if (drawZ < 0) continue;
+                
+                const pTieL = Projection.project(worldX - 50, 250, drawZ);
+                const pTieR = Projection.project(worldX + 50, 250, drawZ);
+                
+                if (pTieL && pTieR) {
+                    ctx.lineWidth = 2 * pTieL.scale;
+                    ctx.beginPath();
+                    ctx.moveTo(pTieL.x, pTieL.y);
+                    ctx.lineTo(pTieR.x, pTieR.y);
+                    ctx.stroke();
+                }
+            }
+        });
+    }
+ 
+    renderWorld() {
+        // Static render for start screen background
+        this.render();
+    }
+ 
+    updateUI() {
+        this.scoreEl.innerText = `SCORE: ${Math.floor(this.score)}`;
+        this.coinsEl.innerText = `COINS: ${this.coins}`;
+    }
+ 
+    loop(timestamp) {
+        if (!this.isRunning) return;
+ 
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1); // Cap dt
+        this.lastTime = timestamp;
+ 
+        this.update(dt);
+        this.render();
+ 
+        requestAnimationFrame((t) => this.loop(t));
+    }
+}
+ 
+// Initialize Game
+const gameCanvas = document.getElementById('gameCanvas');
+const game = new Game(gameCanvas);
+ 
+</script>
+</body>
+</html>

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modular Snake Game</title>
+    <style>
+        body {
+            background-color: #222;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+ 
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+ 
+        canvas {
+            background-color: #000;
+            display: block;
+            border: 4px solid #444;
+        }
+ 
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+ 
+        .hud-panel {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.6);
+            font-size: 18px;
+            font-weight: bold;
+        }
+ 
+        .controls {
+            pointer-events: auto;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+ 
+        /* Custom Checkbox */
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        .toggle-switch input {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+        }
+ 
+        #overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 40px;
+            border-radius: 10px;
+            border: 2px solid #fff;
+            pointer-events: auto;
+            display: flex; /* Flex to center content */
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+ 
+        #overlay h1 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+            font-size: 48px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+ 
+        #overlay p {
+            font-size: 20px;
+            margin: 5px 0;
+        }
+ 
+        button.btn-start {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+ 
+        button.btn-start:hover {
+            background: #45a049;
+        }
+ 
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+ 
+    <div id="game-container">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        
+        <div id="ui-layer">
+            <div class="hud-panel">
+                <div id="score-display">Score: 0</div>
+                <div class="controls">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="wrap-toggle" checked> Wall Wrap
+                    </label>
+                </div>
+            </div>
+        </div>
+ 
+        <div id="overlay">
+            <h1 id="overlay-title">SNAKE</h1>
+            <p id="overlay-score" class="hidden">Final Score: 0</p>
+            <p>Use Arrow Keys or WASD to Move</p>
+            <button class="btn-start" id="start-btn">Start Game</button>
+        </div>
+    </div>
+ 
+<script>
+/**
+ * 1. UTILITY CLASSES
+ */
+class Vector2 {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+ 
+    add(v) {
+        return new Vector2(this.x + v.x, this.y + v.y);
+    }
+ 
+    equals(v) {
+        return this.x === v.x && this.y === v.y;
+    }
+    
+    clone() {
+        return new Vector2(this.x, this.y);
+    }
+}
+ 
+class InputManager {
+    constructor() {
+        this.directionQueue = [];
+        this.currentDirection = new Vector2(1, 0); // Start moving right
+        
+        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    }
+ 
+    handleKeyDown(e) {
+        const key = e.key;
+        let newDir = null;
+ 
+        if (key === 'ArrowUp' || key === 'w' || key === 'W') newDir = new Vector2(0, -1);
+        if (key === 'ArrowDown' || key === 's' || key === 'S') newDir = new Vector2(0, 1);
+        if (key === 'ArrowLeft' || key === 'a' || key === 'A') newDir = new Vector2(-1, 0);
+        if (key === 'ArrowRight' || key === 'd' || key === 'D') newDir = new Vector2(1, 0);
+ 
+        if (newDir) {
+            // Add to queue to prevent rapid-fire key presses causing self-collision
+            // Limit queue size to prevent input lag buildup
+            if (this.directionQueue.length < 2) {
+                this.directionQueue.push(newDir);
+            }
+        }
+    }
+ 
+    getNextDirection(currentMovingDir) {
+        if (this.directionQueue.length > 0) {
+            const nextDir = this.directionQueue[0];
+            
+            // Validate: Cannot reverse direction 180 degrees
+            if (nextDir.x !== -currentMovingDir.x && nextDir.y !== -currentMovingDir.y) {
+                this.directionQueue.shift();
+                return nextDir;
+            } else {
+                // Invalid move (trying to go back), discard it
+                this.directionQueue.shift();
+                // Recursively check next in queue
+                return this.getNextDirection(currentMovingDir);
+            }
+        }
+        return currentMovingDir;
+    }
+    
+    reset() {
+        this.directionQueue = [];
+        this.currentDirection = new Vector2(1, 0);
+    }
+}
+ 
+/**
+ * 2. BASE GAME OBJECT CLASS
+ */
+class GameObject {
+    constructor(game) {
+        this.game = game;
+    }
+    update(dt) {}
+    render(ctx) {}
+}
+ 
+/**
+ * 3. GAME ENTITIES
+ */
+class Food extends GameObject {
+    constructor(game) {
+        super(game);
+        this.position = new Vector2(0, 0);
+        this.color = '#ff4444';
+        this.respawn();
+    }
+ 
+    respawn() {
+        // Generate random position within grid bounds
+        const gridW = this.game.cols;
+        const gridH = this.game.rows;
+        
+        let validPosition = false;
+        while (!validPosition) {
+            const x = Math.floor(Math.random() * gridW);
+            const y = Math.floor(Math.random() * gridH);
+            this.position = new Vector2(x, y);
+ 
+            // Ensure food doesn't spawn on snake body
+            validPosition = !this.game.snake.isOccupying(this.position);
+        }
+    }
+ 
+    render(ctx) {
+        const ts = this.game.tileSize;
+        const pad = 2; // Padding for visual style
+        
+        ctx.fillStyle = this.color;
+        
+        // Draw an apple shape (circle-ish)
+        ctx.beginPath();
+        const centerX = this.position.x * ts + ts/2;
+        const centerY = this.position.y * ts + ts/2;
+        const radius = (ts/2) - pad;
+        
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Shine
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.beginPath();
+        ctx.arc(centerX - radius/3, centerY - radius/3, radius/4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+ 
+class Snake extends GameObject {
+    constructor(game) {
+        super(game);
+        this.reset();
+    }
+ 
+    reset() {
+        // Start in the middle
+        const startX = Math.floor(this.game.cols / 2);
+        const startY = Math.floor(this.game.rows / 2);
+        
+        this.body = [
+            new Vector2(startX, startY),
+            new Vector2(startX - 1, startY),
+            new Vector2(startX - 2, startY)
+        ];
+        
+        this.direction = new Vector2(1, 0); // Moving right
+        this.growPending = 0;
+        this.colorHead = '#4CAF50';
+        this.colorBody = '#8BC34A';
+    }
+ 
+    // Returns true if move successful, false if crashed (wall in no-wrap mode)
+    move(nextDir) {
+        this.direction = nextDir;
+        
+        const head = this.body[0];
+        let nextX = head.x + this.direction.x;
+        let nextY = head.y + this.direction.y;
+        
+        // Handle Wrapping logic
+        const cols = this.game.cols;
+        const rows = this.game.rows;
+        
+        if (this.game.wrapMode) {
+            if (nextX >= cols) nextX = 0;
+            if (nextX < 0) nextX = cols - 1;
+            if (nextY >= rows) nextY = 0;
+            if (nextY < 0) nextY = rows - 1;
+        } else {
+            // No Wrap: Check bounds
+            if (nextX >= cols || nextX < 0 || nextY >= rows || nextY < 0) {
+                return false; // Crash
+            }
+        }
+ 
+        const newHead = new Vector2(nextX, nextY);
+ 
+        // Check Self Collision
+        if (this.isOccupying(newHead)) {
+            // Technically, if we are moving, the tail moves away.
+            // But checking against whole body (minus tail if not growing) is safer.
+            // Simple check: isOccupying checks all segments.
+            // Exception: If we are not growing, the tail will vanish, so hitting the exact tail tip is safe.
+            const tailIndex = this.body.length - 1;
+            const isTail = newHead.equals(this.body[tailIndex]);
+            
+            if (!isTail || this.growPending > 0) {
+                return false; // Crash into self
+            }
+        }
+ 
+        // Move Body
+        this.body.unshift(newHead); // Add new head
+        
+        if (this.growPending > 0) {
+            this.growPending--;
+        } else {
+            this.body.pop(); // Remove tail
+        }
+        
+        return true;
+    }
+ 
+    grow() {
+        this.growPending++;
+    }
+ 
+    isOccupying(pos) {
+        return this.body.some(segment => segment.equals(pos));
+    }
+ 
+    render(ctx) {
+        const ts = this.game.tileSize;
+        
+        this.body.forEach((segment, index) => {
+            const x = segment.x * ts;
+            const y = segment.y * ts;
+            
+            // Head is different color
+            ctx.fillStyle = (index === 0) ? this.colorHead : this.colorBody;
+            
+            // Draw rounded rects
+            ctx.fillRect(x + 1, y + 1, ts - 2, ts - 2);
+            
+            // Draw eyes for head
+            if (index === 0) {
+                ctx.fillStyle = '#000';
+                const eyeSize = ts / 5;
+                // Offset eyes based on direction
+                // Simple centered eyes for now
+                ctx.fillRect(x + ts/4, y + ts/4, eyeSize, eyeSize);
+                ctx.fillRect(x + ts - ts/4 - eyeSize, y + ts/4, eyeSize, eyeSize);
+            }
+        });
+    }
+}
+ 
+/**
+ * 4. GAME MANAGER CLASS
+ */
+class Game {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        
+        // Grid Configuration
+        this.tileSize = 20;
+        this.cols = this.canvas.width / this.tileSize;
+        this.rows = this.canvas.height / this.tileSize;
+        
+        // Systems
+        this.input = new InputManager();
+        this.snake = new Snake(this);
+        this.food = new Food(this);
+        
+        // State
+        this.running = false;
+        this.lastTime = 0;
+        this.accumulator = 0;
+        this.score = 0;
+        
+        // Difficulty
+        this.baseSpeed = 150; // ms per move
+        this.currentSpeed = this.baseSpeed;
+        
+        // Options
+        this.wrapMode = true;
+        
+        // UI Elements
+        this.uiScore = document.getElementById('score-display');
+        this.uiOverlay = document.getElementById('overlay');
+        this.uiTitle = document.getElementById('overlay-title');
+        this.uiFinalScore = document.getElementById('overlay-score');
+        this.btnStart = document.getElementById('start-btn');
+        this.checkboxWrap = document.getElementById('wrap-toggle');
+        
+        // Event Listeners
+        this.btnStart.addEventListener('click', () => this.start());
+        this.checkboxWrap.addEventListener('change', (e) => {
+            this.wrapMode = e.target.checked;
+            // Allow focus to return to game for keyboard input
+            this.btnStart.focus();
+        });
+        
+        // Initial Draw
+        this.render();
+    }
+ 
+    start() {
+        this.reset();
+        this.running = true;
+        this.uiOverlay.classList.add('hidden');
+        this.lastTime = performance.now();
+        requestAnimationFrame(t => this.loop(t));
+    }
+ 
+    reset() {
+        this.score = 0;
+        this.currentSpeed = this.baseSpeed;
+        this.updateScoreUI();
+        this.input.reset();
+        this.snake.reset();
+        this.food.respawn();
+        this.wrapMode = this.checkboxWrap.checked;
+    }
+ 
+    gameOver() {
+        this.running = false;
+        this.uiTitle.innerText = "GAME OVER";
+        this.uiFinalScore.innerText = `Final Score: ${this.score}`;
+        this.uiFinalScore.classList.remove('hidden');
+        this.btnStart.innerText = "Play Again";
+        this.uiOverlay.classList.remove('hidden');
+    }
+ 
+    updateScoreUI() {
+        this.uiScore.innerText = `Score: ${this.score}`;
+    }
+ 
+    update(dt) {
+        this.accumulator += dt;
+        
+        // Game Step Logic (Snake moves in discrete steps)
+        if (this.accumulator >= this.currentSpeed) {
+            this.accumulator -= this.currentSpeed;
+            
+            // 1. Get Input
+            const nextDir = this.input.getNextDirection(this.snake.direction);
+            
+            // 2. Move Snake & Check Collision
+            const alive = this.snake.move(nextDir);
+            
+            if (!alive) {
+                this.gameOver();
+                return;
+            }
+            
+            // 3. Check Food Collision
+            if (this.snake.body[0].equals(this.food.position)) {
+                this.snake.grow();
+                this.score += 10;
+                this.updateScoreUI();
+                this.food.respawn();
+                
+                // Increase speed (decrease interval)
+                // Cap minimum interval at 50ms
+                if (this.currentSpeed > 50) {
+                    this.currentSpeed *= 0.98; 
+                }
+            }
+        }
+    }
+ 
+    render() {
+        // Clear background
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Draw Grid (Optional, makes it look retro)
+        this.ctx.strokeStyle = '#111';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        for (let x = 0; x <= this.canvas.width; x += this.tileSize) {
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, this.canvas.height);
+        }
+        for (let y = 0; y <= this.canvas.height; y += this.tileSize) {
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(this.canvas.width, y);
+        }
+        this.ctx.stroke();
+ 
+        // Draw Entities
+        this.food.render(this.ctx);
+        this.snake.render(this.ctx);
+    }
+ 
+    loop(timestamp) {
+        if (!this.running) return;
+ 
+        const dt = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+ 
+        this.update(dt);
+        this.render();
+ 
+        requestAnimationFrame(t => this.loop(t));
+    }
+}
+ 
+// 5. INITIALIZATION
+window.onload = () => {
+    const game = new Game('gameCanvas');
+};
+ 
+</script>
+</body>
+</html>
