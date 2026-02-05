@@ -22,4 +22,4 @@ If uncertain, ask:
 
 Routing rule:
 1. If state-driven module is requested, use `$vibecode-opponent-ai`.
-2. If simple scripted behavior is fine, keep behavior in `$vibecode-canvas-arcade`.
+2. If simple scripted behavior is fine, keep behavior in the selected base builder skill (`$vibecode-canvas-arcade` or `$vibecode-webgl-arcade`).

@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Lane Dodger</title>
+    <style>
+      :root {
+        --bg-0: #05070f;
+        --bg-1: #0f1630;
+        --panel: rgba(7, 11, 22, 0.8);
+        --text: #ebf1ff;
+        --accent: #56d8ff;
+        --danger: #ff5d7b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 18% 20%, #1f2f68 0%, transparent 44%),
+          radial-gradient(circle at 85% 80%, #1a3563 0%, transparent 34%),
+          linear-gradient(145deg, var(--bg-1) 0%, var(--bg-0) 100%);
+        color: var(--text);
+        font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      }
+
+      #game-shell {
+        position: relative;
+        width: min(95vw, 960px);
+        aspect-ratio: 16 / 9;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow:
+          0 30px 80px rgba(0, 0, 0, 0.52),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+        background: #000;
+      }
+
+      #render-layer,
+      #ui-layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      #render-layer canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #ui-layer {
+        pointer-events: none;
+      }
+
+      .hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: clamp(14px, 2.5vw, 21px);
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.78);
+      }
+
+      #speed-text {
+        color: var(--accent);
+      }
+
+      #start-screen,
+      #game-over-screen,
+      #unsupported-screen {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        background: var(--panel);
+        pointer-events: auto;
+        padding: 24px;
+      }
+
+      .panel {
+        max-width: 580px;
+        display: grid;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 3rem);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      p {
+        margin: 0;
+        color: #ccd5fa;
+        line-height: 1.4;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 7px;
+        font-size: 14px;
+      }
+
+      .pill {
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: rgba(255, 255, 255, 0.1);
+        color: #e6eeff;
+        font-weight: 700;
+      }
+
+      button {
+        justify-self: center;
+        margin-top: 10px;
+        padding: 12px 26px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #56d8ff 0%, #5f79ff 100%);
+        color: #071125;
+        font-size: 1rem;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button:active {
+        transform: translateY(1px);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-shell">
+      <div id="render-layer"></div>
+      <div id="ui-layer">
+        <div class="hud">
+          <div id="score-text">SCORE: 0</div>
+          <div id="speed-text">SPEED: 0</div>
+          <div id="lives-text">LIVES: 3</div>
+        </div>
+
+        <div id="start-screen">
+          <div class="panel">
+            <h1>Neon Lane Dodger</h1>
+            <p>Dodge incoming blocks as speed ramps up. Survive as long as possible.</p>
+            <div class="controls">
+              <span class="pill">A / D</span>
+              <span class="pill">Left / Right</span>
+              <span class="pill">Tap Left / Right Side</span>
+            </div>
+            <button id="start-btn" type="button">Start Run</button>
+          </div>
+        </div>
+
+        <div id="game-over-screen" class="hidden">
+          <div class="panel">
+            <h1>Game Over</h1>
+            <p id="final-score">Score: 0</p>
+            <button id="restart-btn" type="button">Restart</button>
+          </div>
+        </div>
+
+        <div id="unsupported-screen" class="hidden">
+          <div class="panel">
+            <h1>WebGL Unavailable</h1>
+            <p>This browser could not initialize WebGL. Try a modern browser or GPU-enabled profile.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
+
+      /**
+       * 1. UTILITY CLASSES
+       */
+      class InputManager {
+        constructor(root) {
+          this.down = {};
+          this.pressed = {};
+          this.pointerDirection = 0;
+
+          window.addEventListener("keydown", (event) => {
+            const code = event.code;
+            if (!this.down[code]) {
+              this.pressed[code] = true;
+            }
+            this.down[code] = true;
+          });
+
+          window.addEventListener("keyup", (event) => {
+            const code = event.code;
+            this.down[code] = false;
+            this.pressed[code] = false;
+          });
+
+          root.addEventListener("pointerdown", (event) => {
+            const bounds = root.getBoundingClientRect();
+            const half = bounds.left + bounds.width * 0.5;
+            this.pointerDirection = event.clientX < half ? -1 : 1;
+          });
+
+          root.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+          });
+        }
+
+        isPressed(code) {
+          return !!this.pressed[code];
+        }
+
+        consumePointerDirection() {
+          const value = this.pointerDirection;
+          this.pointerDirection = 0;
+          return value;
+        }
+
+        endFrame() {
+          for (const key in this.pressed) {
+            this.pressed[key] = false;
+          }
+        }
+      }
+
+      function disposeMesh(mesh) {
+        if (!mesh) return;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((material) => material.dispose());
+        } else if (mesh.material) {
+          mesh.material.dispose();
+        }
+      }
+
+      /**
+       * 2. BASE ENTITY CLASS
+       */
+      class Entity {
+        constructor(mesh) {
+          this.mesh = mesh;
+          this.markedForDeletion = false;
+        }
+
+        update(_dt, _game) {}
+
+        destroy() {
+          disposeMesh(this.mesh);
+        }
+      }
+
+      /**
+       * 3. GAME ENTITIES
+       */
+      class Player extends Entity {
+        constructor() {
+          const geometry = new THREE.OctahedronGeometry(0.9, 0);
+          const material = new THREE.MeshStandardMaterial({
+            color: 0x73f2ff,
+            emissive: 0x153c5f,
+            roughness: 0.28,
+            metalness: 0.1
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(0, 1.15, 6.7);
+          super(mesh);
+
+          this.lanes = [-3, 0, 3];
+          this.laneIndex = 1;
+          this.targetX = this.lanes[this.laneIndex];
+        }
+
+        shiftLane(step) {
+          this.laneIndex = THREE.MathUtils.clamp(this.laneIndex + step, 0, this.lanes.length - 1);
+          this.targetX = this.lanes[this.laneIndex];
+        }
+
+        update(dt, game) {
+          if (game.input.isPressed("ArrowLeft") || game.input.isPressed("KeyA")) {
+            this.shiftLane(-1);
+          }
+          if (game.input.isPressed("ArrowRight") || game.input.isPressed("KeyD")) {
+            this.shiftLane(1);
+          }
+
+          const pointerDirection = game.input.consumePointerDirection();
+          if (pointerDirection < 0) this.shiftLane(-1);
+          if (pointerDirection > 0) this.shiftLane(1);
+
+          const dx = this.targetX - this.mesh.position.x;
+          this.mesh.position.x += dx * Math.min(1, dt * 13);
+          this.mesh.rotation.y += dt * 1.6;
+          this.mesh.rotation.z = -dx * 0.12;
+
+          this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -3.1, 3.1);
+        }
+      }
+
+      class Obstacle extends Entity {
+        constructor(x, z, speed) {
+          const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+          const material = new THREE.MeshStandardMaterial({
+            color: 0xff5f7e,
+            emissive: 0x3f1320,
+            roughness: 0.45,
+            metalness: 0.06
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(x, 1.1, z);
+          super(mesh);
+
+          this.speed = speed;
+          this.spin = (Math.random() * 2 - 1) * 2.2;
+        }
+
+        update(dt) {
+          this.mesh.position.z += this.speed * dt;
+          this.mesh.rotation.x += dt * this.spin;
+          this.mesh.rotation.y += dt * this.spin * 0.8;
+          if (this.mesh.position.z > 12) {
+            this.markedForDeletion = true;
+          }
+        }
+      }
+
+      class Particle extends Entity {
+        constructor(position, color) {
+          const geometry = new THREE.SphereGeometry(0.12, 8, 8);
+          const material = new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.8,
+            roughness: 0.4,
+            metalness: 0.05
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.copy(position);
+          super(mesh);
+
+          this.velocity = new THREE.Vector3(
+            (Math.random() * 2 - 1) * 5,
+            Math.random() * 4 + 1,
+            (Math.random() * 2 - 1) * 5
+          );
+          this.life = 0.55;
+        }
+
+        update(dt) {
+          this.life -= dt;
+          this.mesh.position.addScaledVector(this.velocity, dt);
+          this.velocity.y -= dt * 9;
+          this.mesh.scale.setScalar(Math.max(0.01, this.life * 1.6));
+
+          if (this.life <= 0) {
+            this.markedForDeletion = true;
+          }
+        }
+      }
+
+      /**
+       * 4. GAME MANAGER
+       */
+      class Game {
+        constructor(root) {
+          this.root = root;
+          this.renderLayer = document.getElementById("render-layer");
+          this.input = new InputManager(root);
+          this.state = "START";
+          this.lastTime = 0;
+
+          this.ui = {
+            score: document.getElementById("score-text"),
+            speed: document.getElementById("speed-text"),
+            lives: document.getElementById("lives-text"),
+            final: document.getElementById("final-score"),
+            start: document.getElementById("start-screen"),
+            over: document.getElementById("game-over-screen"),
+            unsupported: document.getElementById("unsupported-screen"),
+            startBtn: document.getElementById("start-btn"),
+            restartBtn: document.getElementById("restart-btn")
+          };
+
+          this.ui.startBtn.addEventListener("click", () => this.start());
+          this.ui.restartBtn.addEventListener("click", () => this.start());
+
+          this.obstacles = [];
+          this.particles = [];
+          this.flashTime = 0;
+
+          this.setupThree();
+          this.setupWorld();
+          this.handleResize();
+          window.addEventListener("resize", () => this.handleResize());
+
+          window.__TEST__ = {
+            ready: true,
+            state: () => ({
+              mode: this.state,
+              score: this.score,
+              speed: this.speed,
+              lives: this.lives,
+              obstacleCount: this.obstacles.length
+            })
+          };
+        }
+
+        setupThree() {
+          const testCanvas = document.createElement("canvas");
+          const gl = testCanvas.getContext("webgl2") || testCanvas.getContext("webgl");
+          if (!gl) {
+            this.ui.unsupported.classList.remove("hidden");
+            throw new Error("WebGL unavailable");
+          }
+
+          this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          this.renderLayer.appendChild(this.renderer.domElement);
+
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0x090d1c);
+          this.scene.fog = new THREE.Fog(0x090d1c, 22, 86);
+
+          this.camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 140);
+          this.camera.position.set(0, 4.8, 11.3);
+          this.camera.lookAt(0, 1.2, -3);
+        }
+
+        setupWorld() {
+          const hemi = new THREE.HemisphereLight(0x8dbbff, 0x111428, 0.95);
+          this.scene.add(hemi);
+
+          const key = new THREE.DirectionalLight(0xffffff, 1.1);
+          key.position.set(5, 12, 8);
+          this.scene.add(key);
+
+          const floorGeometry = new THREE.PlaneGeometry(40, 240);
+          const floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0f1b37,
+            emissive: 0x0d1630,
+            roughness: 0.9
+          });
+          this.floor = new THREE.Mesh(floorGeometry, floorMaterial);
+          this.floor.rotation.x = -Math.PI / 2;
+          this.floor.position.set(0, 0, -75);
+          this.scene.add(this.floor);
+
+          const laneMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4adeff,
+            emissive: 0x1a87ad,
+            roughness: 0.38
+          });
+
+          this.laneMarkers = [];
+          for (let i = 0; i < 36; i++) {
+            const marker = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 2.2), laneMaterial);
+            marker.position.set(0, 0.03, -i * 6);
+            this.laneMarkers.push(marker);
+            this.scene.add(marker);
+          }
+
+          this.player = new Player();
+          this.scene.add(this.player.mesh);
+          this.reset();
+        }
+
+        handleResize() {
+          const width = this.root.clientWidth;
+          const height = this.root.clientHeight;
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height, false);
+        }
+
+        reset() {
+          this.score = 0;
+          this.lives = 3;
+          this.speed = 18;
+          this.spawnTimer = 0.85;
+          this.spawnInterval = 0.85;
+
+          this.player.mesh.position.set(0, 1.15, 6.7);
+          this.player.laneIndex = 1;
+          this.player.targetX = 0;
+
+          this.obstacles.forEach((entity) => {
+            this.scene.remove(entity.mesh);
+            entity.destroy();
+          });
+          this.particles.forEach((entity) => {
+            this.scene.remove(entity.mesh);
+            entity.destroy();
+          });
+
+          this.obstacles = [];
+          this.particles = [];
+          this.flashTime = 0;
+          this.updateUI();
+          this.renderer.setClearColor(0x090d1c, 1);
+        }
+
+        start() {
+          this.reset();
+          this.state = "PLAYING";
+          this.ui.start.classList.add("hidden");
+          this.ui.over.classList.add("hidden");
+          this.lastTime = performance.now();
+          requestAnimationFrame((timestamp) => this.loop(timestamp));
+        }
+
+        gameOver() {
+          this.state = "GAMEOVER";
+          this.ui.final.textContent = `Score: ${Math.floor(this.score)}`;
+          this.ui.over.classList.remove("hidden");
+        }
+
+        spawnObstacle() {
+          const lanes = [-3, 0, 3];
+          const lane = lanes[Math.floor(Math.random() * lanes.length)];
+          const obstacle = new Obstacle(lane, -92, this.speed);
+          this.obstacles.push(obstacle);
+          this.scene.add(obstacle.mesh);
+        }
+
+        createBurst(position, color) {
+          for (let i = 0; i < 14; i++) {
+            const particle = new Particle(position, color);
+            this.particles.push(particle);
+            this.scene.add(particle.mesh);
+          }
+        }
+
+        collides(playerMesh, obstacleMesh) {
+          return (
+            Math.abs(playerMesh.position.x - obstacleMesh.position.x) < 1.26 &&
+            Math.abs(playerMesh.position.z - obstacleMesh.position.z) < 1.26
+          );
+        }
+
+        update(dt) {
+          if (this.state !== "PLAYING") return;
+
+          this.score += dt * 24;
+          this.speed = Math.min(36, this.speed + dt * 0.32);
+          this.spawnInterval = Math.max(0.28, this.spawnInterval - dt * 0.007);
+          this.spawnTimer -= dt;
+
+          if (this.spawnTimer <= 0) {
+            this.spawnObstacle();
+            this.spawnTimer = this.spawnInterval;
+          }
+
+          this.player.update(dt, this);
+
+          for (const marker of this.laneMarkers) {
+            marker.position.z += this.speed * dt;
+            if (marker.position.z > 12) marker.position.z -= 216;
+          }
+
+          this.obstacles.forEach((entity) => entity.update(dt, this));
+          this.particles.forEach((entity) => entity.update(dt, this));
+
+          for (const obstacle of this.obstacles) {
+            if (obstacle.markedForDeletion) continue;
+            if (!this.collides(this.player.mesh, obstacle.mesh)) continue;
+
+            obstacle.markedForDeletion = true;
+            this.lives -= 1;
+            this.flashTime = 0.12;
+            this.createBurst(obstacle.mesh.position, 0xff5d7b);
+            if (this.lives <= 0) this.gameOver();
+          }
+
+          this.flashTime = Math.max(0, this.flashTime - dt);
+          this.renderer.setClearColor(this.flashTime > 0 ? 0x341222 : 0x090d1c, 1);
+
+          this.cleanup(this.obstacles);
+          this.cleanup(this.particles);
+          this.updateUI();
+        }
+
+        cleanup(list) {
+          for (let i = list.length - 1; i >= 0; i--) {
+            const item = list[i];
+            if (!item.markedForDeletion) continue;
+            this.scene.remove(item.mesh);
+            item.destroy();
+            list.splice(i, 1);
+          }
+        }
+
+        updateUI() {
+          this.ui.score.textContent = `SCORE: ${Math.floor(this.score)}`;
+          this.ui.speed.textContent = `SPEED: ${Math.floor(this.speed)}`;
+          this.ui.lives.textContent = `LIVES: ${this.lives}`;
+        }
+
+        loop(timestamp) {
+          if (this.state !== "PLAYING") {
+            this.render();
+            return;
+          }
+
+          const dt = Math.min(0.1, (timestamp - this.lastTime) / 1000);
+          this.lastTime = timestamp;
+          this.update(dt);
+          this.render();
+          this.input.endFrame();
+
+          requestAnimationFrame((nextTimestamp) => this.loop(nextTimestamp));
+        }
+
+        render() {
+          this.renderer.render(this.scene, this.camera);
+        }
+      }
+
+      /**
+       * 5. INITIALIZATION
+       */
+      try {
+        const root = document.getElementById("game-shell");
+        new Game(root);
+      } catch (error) {
+        console.error(error);
+      }
+    </script>
+  </body>
+</html>
