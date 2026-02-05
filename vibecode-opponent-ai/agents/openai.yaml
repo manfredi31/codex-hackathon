@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibecode Opponent AI"
+  short_description: "Generate drop-in JS opponent AI module"
+  default_prompt: "Use $vibecode-opponent-ai to generate a deterministic drop-in ai.js with decideAction(state) from my game rules and state/action schemas."

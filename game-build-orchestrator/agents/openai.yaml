@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Build Orchestrator"
+  short_description: "Clarify and route arcade game builds"
+  default_prompt: "Use $game-build-orchestrator to confirm my game spec, decide if it is feasible with $vibecode-canvas-arcade, and choose whether to invoke $vibecode-opponent-ai."
