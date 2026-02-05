@@ -1,4 +1,4 @@
 interface:
   display_name: "Vibecode WebGL Arcade"
-  short_description: "One-shot browser 3D WebGL game builder"
-  default_prompt: "Use $vibecode-webgl-arcade to build a complete browser-playable 3D WebGL arcade game with start/HUD/game-over/restart flow. Before building, randomly sample one visual style label from the skill style bank (unless user-specified), reinterpret it as a 3D visual direction, and apply it consistently."
+  short_description: "One-shot browser 3D WebGL game builder and clone-maker"
+  default_prompt: "Use $vibecode-webgl-arcade to build a complete browser-playable 3D WebGL game in HTML using Three.js with start/HUD/game-over/restart flow. If the user asks for a clone/remake (for example \"Make a XXXGAME clone in HTML using Three JS, be as detailed as possible, it should be the closest clone you can make\"), switch to clone mode: restate Clone Target, match gameplay feel as closely as possible, and end with Clone Fidelity Notes. Before building, randomly sample one visual style label from the skill style bank (unless user-specified), reinterpret it as a 3D visual direction, and apply it consistently."

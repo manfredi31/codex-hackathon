@@ -1,6 +1,6 @@
 ---
 name: vibecode-webgl-arcade
-description: Build complete browser-playable 3D arcade games using WebGL (default Three.js) with a consistent house framework (renderer + scene + camera + lights + entities + DOM HUD overlays). Use when the user asks for a fast 3D game prototype/MVP in the browser with start/play/game-over/restart flow, especially as the 3D counterpart to vibecode-canvas-arcade.
+description: 'Build complete browser-playable 3D arcade games using WebGL (default Three.js) with a consistent house framework (renderer + scene + camera + lights + entities + DOM HUD overlays). Use when the user asks for a fast 3D game prototype/MVP in the browser with start/play/game-over/restart flow, or asks for a close clone/remake in HTML + Three.js (for example: "Make a XXXGAME clone in HTML using Three JS, be as detailed as possible, it should be the closest clone you can make").'
 ---
 
 # Vibecode WebGL Arcade
@@ -10,15 +10,48 @@ description: Build complete browser-playable 3D arcade games using WebGL (defaul
 Generate polished 3D arcade games that run directly in the browser and preserve a predictable architecture across outputs.
 Default to one standalone `index.html` using Three.js module import from CDN unless the user asks for split files.
 Before every build, select one visual style label from the mandatory random style bank and apply it consistently.
+When the request is clone-oriented, switch to `Clone Mode (Closest Clone Requests)` below.
 
 ## Quick Start
 
 1. Read `references/framework-signature.md` before coding.
-2. Sample one style label from `Random Style Sampling (Mandatory)` in this file (unless the user explicitly picked a style).
-3. Pick the closest pattern from `references/genre-recipes.md`.
-4. Start from `assets/templates/webgl-single-file-template.html`.
-5. Replace placeholders and complete TODO markers in one pass.
-6. Validate with `references/quality-gates.md` before returning.
+2. If the prompt asks for a clone/remake, run `Clone Mode (Closest Clone Requests)` first.
+3. Sample one style label from `Random Style Sampling (Mandatory)` in this file (unless the user explicitly picked a style).
+4. Pick the closest pattern from `references/genre-recipes.md`.
+5. Start from `assets/templates/webgl-single-file-template.html`.
+6. Replace placeholders and complete TODO markers in one pass.
+7. Validate with `references/quality-gates.md` before returning.
+
+## Clone Mode (Closest Clone Requests)
+
+Use this mode when the prompt includes clone/remake language, including variants like:
+- "Make a XXXGAME clone in HTML using Three JS"
+- "closest clone you can make"
+- "recreate [game] in Three.js"
+- "be as detailed as possible"
+
+Clone mode rules:
+1. Keep engine locked to Three.js unless the user explicitly asks for another engine.
+2. Extract and restate the clone target as `Clone Target: <game name>`.
+3. Build a fidelity checklist before coding and mirror it in implementation:
+- camera behavior
+- movement feel and acceleration/deceleration tuning
+- core loop and objective
+- scoring/combo/progression rules
+- enemies/obstacles/pattern cadence
+- failure states and restart loop
+- HUD information architecture
+- level/arena structure and pacing ramp
+- VFX/SFX feedback rhythm (visual emphasis if audio assets are unavailable)
+4. Prioritize gameplay feel parity over ornamental visuals.
+5. Use explicit gameplay constants for tunable parity (`speed`, `gravity`, `spawnInterval`, `fireCooldown`, etc.).
+6. If exact source behavior is unknown, make the closest practical assumption and call it out.
+7. Do not copy proprietary logos, names, characters, music, or trademarked art assets verbatim; use neutral replacements while preserving gameplay structure.
+8. Deliver a complete playable build, not a partial prototype.
+9. End the response with `Clone Fidelity Notes` summarizing:
+- what was matched closely
+- what was approximated and why
+- the top constants to tweak for even closer parity
 
 ## Random Style Sampling (Mandatory)
 
@@ -90,6 +123,7 @@ Other Common Visual Labels
 7. Implement restart without page reload.
 8. Keep `index.html` as the playable entrypoint.
 9. Include `Sampled Style: <label>` in the build response (or `Chosen Style` when user-specified).
+10. In clone mode, include `Clone Target: <name>` and `Clone Fidelity Notes`.
 
 ## Engine Policy
 
@@ -112,16 +146,17 @@ Other Common Visual Labels
 ## Build Procedure
 
 1. Select the style label (random unless user-specified) and write down 3-5 concrete visual cues.
-2. Define loop in one sentence: objective, lose condition, score signal.
-3. Define state model early (`START`, `PLAYING`, `GAMEOVER`).
-4. Implement controls and camera first; verify edge-trigger inputs.
-5. Implement player movement and world motion.
-6. Implement spawns and difficulty ramp.
-7. Implement collisions, health/lives, and scoring.
-8. Implement UI updates and restart path.
-9. Add minimal test seam when useful:
+2. If clone mode is active, define a short fidelity checklist with concrete target behaviors and tuning anchors.
+3. Define loop in one sentence: objective, lose condition, score signal.
+4. Define state model early (`START`, `PLAYING`, `GAMEOVER`).
+5. Implement controls and camera first; verify edge-trigger inputs.
+6. Implement player movement and world motion.
+7. Implement spawns and difficulty ramp.
+8. Implement collisions, health/lives, and scoring.
+9. Implement UI updates and restart path.
+10. Add minimal test seam when useful:
 - `window.__TEST__ = { ready, state: () => ({ ... }) }`
-10. Run the quality gates and return final code.
+11. Run the quality gates and return final code.
 
 ## References
 
