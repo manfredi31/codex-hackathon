@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -17,6 +19,10 @@ class Settings:
 
 def load_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
+
+    # Load .env from project root so OPENAI_API_KEY (and other vars) are available.
+    load_dotenv(project_root / ".env")
+
     games_dir = Path(os.getenv("GAMES_DIR", project_root / "games")).resolve()
 
     return Settings(

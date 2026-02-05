@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .models import ChatMessage, RunStatus
+
+logger = logging.getLogger(__name__)
 from .prompting import build_game_prompt, generate_card_image, generate_title
 from .storage import GameNotFoundError, GameStorage
 
@@ -28,6 +31,7 @@ class RunState:
     process: asyncio.subprocess.Process | None = None
     return_code: int | None = None
     last_message: str | None = None
+    session_id: str | None = None
     error: str | None = None
     cancelled: bool = False
     subscribers: set[asyncio.Queue] = field(default_factory=set)
@@ -180,22 +184,36 @@ class RunManager:
         runs_dir = run_dir / ".runs"
         runs_dir.mkdir(parents=True, exist_ok=True)
 
-        last_message_path = runs_dir / f"{run.run_id}.last.txt"
-
         run.status = RunStatus.running
         run.started_at = datetime.now(timezone.utc)
         run.queue_position = None
         await self._emit(run, "status", {"status": RunStatus.running.value})
 
-        # Build prompt for the game Codex process.
-        game_prompt = build_game_prompt(
-            prompt=run.prompt,
-            chat_context=run.chat_context,
-        )
+        # Check whether we can resume an existing Codex session for this game.
+        existing_session_id = self._load_session_id(run.slug)
+
+        if existing_session_id:
+            # Resume: send only the user's latest message; Codex already has
+            # the full conversation history.
+            game_prompt = run.prompt.strip()
+            last_message_path: Path | None = None
+        else:
+            # New session: build the full prompt with system instructions and
+            # prior chat context.
+            game_prompt = build_game_prompt(
+                prompt=run.prompt,
+                chat_context=run.chat_context,
+            )
+            last_message_path = runs_dir / f"{run.run_id}.last.txt"
 
         # --- Launch primary game Codex process ---
         try:
-            game_proc = await self._spawn_codex(run_dir, game_prompt, last_message_path)
+            game_proc = await self._spawn_codex(
+                run_dir,
+                game_prompt,
+                last_message_path,
+                session_id=existing_session_id,
+            )
         except FileNotFoundError:
             run.status = RunStatus.failed
             run.error = f"Codex binary not found: {self.codex_bin}"
@@ -236,8 +254,12 @@ class RunManager:
         run.return_code = return_code
         run.finished_at = datetime.now(timezone.utc)
 
-        if last_message_path.exists():
+        if last_message_path and last_message_path.exists():
             run.last_message = last_message_path.read_text(encoding="utf-8").strip()
+
+        # Persist the session ID so the next run for this game can resume.
+        if run.session_id:
+            self._save_session_id(run.slug, run.session_id)
 
         if run.cancelled and return_code != 0:
             run.status = RunStatus.cancelled
@@ -261,6 +283,22 @@ class RunManager:
         )
 
     # ------------------------------------------------------------------
+    # Session persistence helpers
+    # ------------------------------------------------------------------
+
+    def _load_session_id(self, slug: str) -> str | None:
+        """Load persisted Codex session ID for a game, if any."""
+        session_file = self.storage.game_dir(slug) / ".codex_session"
+        if session_file.exists():
+            return session_file.read_text(encoding="utf-8").strip() or None
+        return None
+
+    def _save_session_id(self, slug: str, session_id: str) -> None:
+        """Persist Codex session ID so subsequent runs can resume."""
+        session_file = self.storage.game_dir(slug) / ".codex_session"
+        session_file.write_text(session_id, encoding="utf-8")
+
+    # ------------------------------------------------------------------
     # Codex subprocess helpers
     # ------------------------------------------------------------------
 
@@ -269,22 +307,43 @@ class RunManager:
         cwd: Path,
         prompt: str,
         last_message_path: Path | None = None,
+        session_id: str | None = None,
     ) -> asyncio.subprocess.Process:
-        """Spawn a single Codex CLI process and feed *prompt* via stdin."""
-        cmd = [
-            self.codex_bin,
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-            "--cd",
-            str(cwd),
-        ]
-        if last_message_path:
-            cmd.extend(["--output-last-message", str(last_message_path)])
-        cmd.append("-")
+        """Spawn a Codex CLI process.
 
-        if self.codex_model:
-            cmd[2:2] = ["-m", self.codex_model]
+        When *session_id* is provided the process uses ``codex exec resume``
+        to continue an existing conversation.  Otherwise a fresh session is
+        created with ``codex exec``.
+        """
+        if session_id:
+            # Resume an existing Codex session.
+            cmd = [
+                self.codex_bin,
+                "exec",
+                "resume",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--json",
+            ]
+            if self.codex_model:
+                cmd.extend(["-m", self.codex_model])
+            # Positional args: SESSION_ID then PROMPT ("-" = read from stdin).
+            cmd.extend([session_id, "-"])
+        else:
+            # Start a brand-new session.
+            cmd = [
+                self.codex_bin,
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--json",
+                "--cd",
+                str(cwd),
+            ]
+            if last_message_path:
+                cmd.extend(["--output-last-message", str(last_message_path)])
+            cmd.append("-")
+
+            if self.codex_model:
+                cmd[2:2] = ["-m", self.codex_model]
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -313,7 +372,7 @@ class RunManager:
             self.storage.update_title(run.slug, title)
             await self._emit(run, "metadata_updated", {"task": "title"})
         except Exception:
-            pass  # Title generation failure is non-critical.
+            logger.exception("Title generation failed for slug=%s", run.slug)
 
     async def _generate_and_save_card_image(self, run: RunState) -> None:
         """Generate a card image via the OpenAI Images API and save it to the game folder."""
@@ -329,7 +388,7 @@ class RunManager:
             self.storage.touch_game(run.slug)
             await self._emit(run, "metadata_updated", {"task": "image"})
         except Exception:
-            pass  # Image generation failure is non-critical.
+            logger.exception("Card image generation failed for slug=%s", run.slug)
 
     async def _consume_stdout(
         self,
@@ -349,13 +408,138 @@ class RunManager:
                 continue
 
             try:
-                payload = json.loads(text)
-                chunks = self._extract_assistant_text_chunks(payload)
-                for chunk in chunks:
-                    if chunk.strip():
-                        await self._emit(run, "assistant_response", {"text": chunk})
+                event = json.loads(text)
             except json.JSONDecodeError:
-                return
+                # Non-JSON line (e.g. a CLI warning) — skip, don't abort.
+                continue
+
+            if not isinstance(event, dict):
+                continue
+
+            await self._forward_codex_event(run, event)
+
+    async def _forward_codex_event(
+        self, run: RunState, event: dict[str, Any]
+    ) -> None:
+        """Route a single ``codex exec --json`` JSONL event.
+
+        The stdout format uses top-level ``type`` values such as
+        ``thread.started``, ``item.started``, ``item.completed``, and
+        ``turn.completed``.  The ``item`` dict carries a nested ``type``
+        (``reasoning``, ``command_execution``, ``agent_message``, etc.).
+        """
+        top_type = event.get("type", "")
+
+        # --- Session / thread ID ---
+        if top_type == "thread.started":
+            thread_id = event.get("thread_id")
+            if isinstance(thread_id, str) and thread_id:
+                run.session_id = thread_id
+            return
+
+        # --- Item events (the interesting ones) ---
+        item = event.get("item")
+        if not isinstance(item, dict):
+            return
+
+        item_type = item.get("type", "")
+        item_id = item.get("id", "")
+
+        # Thinking / reasoning
+        if item_type == "reasoning" and top_type == "item.completed":
+            text = item.get("text", "")
+            if isinstance(text, str) and text.strip():
+                await self._emit(
+                    run, "codex_thinking", {"text": text.strip()}
+                )
+            return
+
+        # Tool call started (shell command or other execution)
+        if item_type == "command_execution" and top_type == "item.started":
+            command = item.get("command", "")
+            await self._emit(
+                run,
+                "codex_tool_call",
+                {
+                    "callId": item_id,
+                    "name": "shell_command",
+                    "input": command if isinstance(command, str) else str(command),
+                },
+            )
+            return
+
+        # Tool call completed — emit the output
+        if item_type == "command_execution" and top_type == "item.completed":
+            output = item.get("aggregated_output", "")
+            if not isinstance(output, str):
+                output = str(output)
+            if len(output) > 500:
+                output = output[:500] + "\u2026"
+            exit_code = item.get("exit_code")
+            await self._emit(
+                run,
+                "codex_tool_output",
+                {
+                    "callId": item_id,
+                    "output": output,
+                    "exitCode": exit_code,
+                },
+            )
+            return
+
+        # File-edit tool calls (apply_patch and similar)
+        if item_type in ("local_shell_call", "tool_call") and top_type in (
+            "item.started",
+            "item.completed",
+        ):
+            name = item.get("name", item_type)
+            if top_type == "item.started":
+                raw_input = item.get("arguments") or item.get("input") or ""
+                display = self._summarize_tool_input(name, raw_input)
+                await self._emit(
+                    run,
+                    "codex_tool_call",
+                    {"callId": item_id, "name": name, "input": display},
+                )
+            else:
+                raw_output = item.get("output", "")
+                if not isinstance(raw_output, str):
+                    raw_output = str(raw_output)
+                if len(raw_output) > 500:
+                    raw_output = raw_output[:500] + "\u2026"
+                await self._emit(
+                    run,
+                    "codex_tool_output",
+                    {"callId": item_id, "output": raw_output},
+                )
+            return
+
+        # Assistant text message
+        if item_type == "agent_message" and top_type == "item.completed":
+            text = item.get("text", "")
+            if isinstance(text, str) and text.strip():
+                await self._emit(
+                    run, "assistant_response", {"text": text.strip()}
+                )
+            return
+
+    @staticmethod
+    def _summarize_tool_input(name: str, raw_input: Any) -> str:
+        """Produce a short human-readable label for a tool invocation."""
+        if not isinstance(raw_input, str):
+            return str(raw_input)[:200]
+        if name == "apply_patch":
+            for patch_line in raw_input.splitlines():
+                if patch_line.startswith(("*** Update File:", "*** Add File:")):
+                    return patch_line.split(":", 1)[-1].strip()
+            return "(file edit)"
+        if name == "shell_command":
+            try:
+                args = json.loads(raw_input)
+                return args.get("command", raw_input)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+        return raw_input[:200]
 
     async def _consume_stderr(
         self,
@@ -394,38 +578,6 @@ class RunManager:
         event_path.parent.mkdir(parents=True, exist_ok=True)
         with event_path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(event) + "\n")
-
-    def _extract_assistant_text_chunks(self, payload: Any) -> list[str]:
-        chunks: list[str] = []
-
-        def walk(node: Any) -> None:
-            if isinstance(node, str):
-                return
-
-            if isinstance(node, dict):
-                # Common response-stream keys from Codex/Responses events.
-                if node.get("type") in {
-                    "response.output_text.delta",
-                    "response.output_text",
-                    "assistant_message",
-                    "message.delta",
-                    "message",
-                }:
-                    for key in ("delta", "text", "content", "message"):
-                        value = node.get(key)
-                        if isinstance(value, str):
-                            chunks.append(value)
-
-                for value in node.values():
-                    walk(value)
-                return
-
-            if isinstance(node, list):
-                for item in node:
-                    walk(item)
-
-        walk(payload)
-        return chunks
 
     def _refresh_queue_positions_locked(self) -> None:
         queued_runs = sorted(

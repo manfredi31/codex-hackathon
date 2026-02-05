@@ -6,8 +6,13 @@ import type { ChatMessage, GameRecord, RunEvent } from '../types';
 
 interface ChatEntry {
   id: string;
-  role: ChatMessage['role'];
+  type: 'message' | 'thinking' | 'tool_call';
+  role?: ChatMessage['role'];
   content: string;
+  callId?: string;
+  toolName?: string;
+  toolOutput?: string;
+  isExpanded?: boolean;
 }
 
 function nextId() {
@@ -91,7 +96,15 @@ export function CreatePage() {
   }, [game, previewNonce]);
 
   function appendMessage(role: ChatMessage['role'], content: string) {
-    setMessages((previous) => [...previous, { id: nextId(), role, content }]);
+    setMessages((previous) => [...previous, { id: nextId(), type: 'message', role, content }]);
+  }
+
+  function toggleExpand(id: string) {
+    setMessages((previous) =>
+      previous.map((msg) =>
+        msg.id === id ? { ...msg, isExpanded: !msg.isExpanded } : msg
+      )
+    );
   }
 
   async function refreshGame(slug: string) {
@@ -110,6 +123,46 @@ export function CreatePage() {
       const event = JSON.parse(message.data) as RunEvent;
 
       if (event.type === 'queue_position') {
+        return;
+      }
+
+      if (event.type === 'codex_thinking') {
+        const text = event.payload.text;
+        if (typeof text === 'string' && text.trim().length > 0) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), type: 'thinking', content: text },
+          ]);
+        }
+        return;
+      }
+
+      if (event.type === 'codex_tool_call') {
+        const { callId, name, input } = event.payload;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            type: 'tool_call',
+            content: typeof input === 'string' ? input : '',
+            callId: typeof callId === 'string' ? callId : '',
+            toolName: typeof name === 'string' ? name : '',
+          },
+        ]);
+        return;
+      }
+
+      if (event.type === 'codex_tool_output') {
+        const { callId, output } = event.payload;
+        if (typeof callId === 'string' && typeof output === 'string') {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.type === 'tool_call' && msg.callId === callId
+                ? { ...msg, toolOutput: output }
+                : msg
+            )
+          );
+        }
         return;
       }
 
@@ -162,10 +215,9 @@ export function CreatePage() {
     appendMessage('user', cleanPrompt);
 
     const chatContext: ChatMessage[] = [
-      ...messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      })),
+      ...messages
+        .filter((m) => m.type === 'message' && m.role)
+        .map((m) => ({ role: m.role!, content: m.content })),
       { role: 'user', content: cleanPrompt }
     ];
 
@@ -216,13 +268,56 @@ export function CreatePage() {
             {messages.length === 0 && (
               <p className="chat-empty">Describe the game you want to build.</p>
             )}
-            {messages.map((message) => (
-              <div className={`chat-row ${message.role === 'user' ? 'chat-row-right' : 'chat-row-left'}`} key={message.id}>
-                <div className={`chat-bubble ${message.role === 'user' ? 'bubble-user' : 'bubble-assistant'}`}>
-                  {message.content}
+            {messages.map((entry) => {
+              if (entry.type === 'thinking') {
+                return (
+                  <div className="chat-row chat-row-left" key={entry.id}>
+                    <div
+                      className={`activity-bubble bubble-thinking${entry.isExpanded ? ' expanded' : ''}`}
+                      onClick={() => toggleExpand(entry.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter') toggleExpand(entry.id); }}
+                    >
+                      <span className="activity-label">Thinking</span>
+                      <span className="activity-text">{entry.content}</span>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (entry.type === 'tool_call') {
+                const label =
+                  entry.toolName === 'shell_command' ? 'Terminal' :
+                  entry.toolName === 'apply_patch' ? 'Editing' :
+                  entry.toolName || 'Tool';
+                return (
+                  <div className="chat-row chat-row-left" key={entry.id}>
+                    <div
+                      className={`activity-bubble bubble-tool-call${entry.isExpanded ? ' expanded' : ''}`}
+                      onClick={() => toggleExpand(entry.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter') toggleExpand(entry.id); }}
+                    >
+                      <span className="activity-label">{label}</span>
+                      <code className="activity-command">{entry.content}</code>
+                      {entry.toolOutput && (
+                        <pre className="tool-output">{entry.toolOutput}</pre>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className={`chat-row ${entry.role === 'user' ? 'chat-row-right' : 'chat-row-left'}`} key={entry.id}>
+                  <div className={`chat-bubble ${entry.role === 'user' ? 'bubble-user' : 'bubble-assistant'}`}>
+                    {entry.content}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {isGenerating && (
               <div className="chat-row chat-row-left">
                 <div className="chat-bubble bubble-assistant bubble-typing">

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Vibecode Canvas Arcade"
-  short_description: "One-shot HTML canvas arcade game builder"
-  default_prompt: "Build a complete single-file HTML5 canvas arcade game in the house style with DOM overlays and a class-based Game manager. Before building, randomly sample one visual style label from the skill style bank (unless user-specified) and apply it consistently."

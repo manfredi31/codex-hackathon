@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibecode WebGL Arcade"
+  short_description: "One-shot browser 3D WebGL game builder"
+  default_prompt: "Use $vibecode-webgl-arcade to build a complete browser-playable 3D WebGL arcade game with start/HUD/game-over/restart flow. Before building, randomly sample one visual style label from the skill style bank (unless user-specified), reinterpret it as a 3D visual direction, and apply it consistently."

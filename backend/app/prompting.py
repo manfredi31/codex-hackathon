@@ -29,7 +29,7 @@ def build_game_prompt(
     return f"""
 You are Codex building a browser game inside this folder.
 
-Use the $vibecode-canvas-arcade skill.
+Use the $game-build-orchestrator skill.
 Edit only files in the current working directory.
 Ensure index.html is the playable entrypoint.
 Do NOT modify game.json (managed separately).

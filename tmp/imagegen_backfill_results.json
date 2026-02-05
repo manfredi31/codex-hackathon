@@ -1,0 +1,138 @@
+[
+  {
+    "slug": "game-20260205211554",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205211554/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205211554/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 41.5s.",
+    "code": 0
+  },
+  {
+    "slug": "game-20260205214346",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205214346/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205214346/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 29.5s.",
+    "code": 0
+  },
+  {
+    "slug": "game-20260205222112",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205222112/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205222112/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 37.0s.",
+    "code": 0
+  },
+  {
+    "slug": "game-20260205222514",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205222514/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205222514/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 31.3s.",
+    "code": 0
+  },
+  {
+    "slug": "game-20260205223020",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205223020/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205223020/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 28.2s.",
+    "code": 0
+  },
+  {
+    "slug": "game-20260205224716",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/game-20260205224716/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/game-20260205224716/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 32.2s.",
+    "code": 0
+  },
+  {
+    "slug": "neon-godge",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/neon-godge/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/neon-godge/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 34.8s.",
+    "code": 0
+  },
+  {
+    "slug": "skyline-surge-3d",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/skyline-surge-3d/card.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/skyline-surge-3d/card.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 31.6s.",
+    "code": 0
+  },
+  {
+    "slug": "asteroid-shepherd",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/asteroid-shepherd.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/asteroid-shepherd.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 30.4s.",
+    "code": 0
+  },
+  {
+    "slug": "brickfall-arena",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/brickfall-arena.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/brickfall-arena.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 27.2s.",
+    "code": 0
+  },
+  {
+    "slug": "flappybird",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/flappybird.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/flappybird.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 27.1s.",
+    "code": 0
+  },
+  {
+    "slug": "grid-chase",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/grid-chase.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/grid-chase.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 32.9s.",
+    "code": 0
+  },
+  {
+    "slug": "neon-drift",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/neon-drift.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/neon-drift.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 33.2s.",
+    "code": 0
+  },
+  {
+    "slug": "skyline-surge-3d",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/skyline-surge-3d.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/skyline-surge-3d.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 29.5s.",
+    "code": 0
+  },
+  {
+    "slug": "subwaysurfer",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/subwaysurfer.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/subwaysurfer.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 29.4s.",
+    "code": 0
+  },
+  {
+    "slug": "webgl-lane-dodger",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/webgl-lane-dodger.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/webgl-lane-dodger.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 26.3s.",
+    "code": 0
+  },
+  {
+    "slug": "zombieshooter",
+    "out": "/Users/manfredibernardi/projects/codex-hackathon/games/zombieshooter.png",
+    "ok": true,
+    "stdout": "Wrote /Users/manfredibernardi/projects/codex-hackathon/games/zombieshooter.png",
+    "stderr": "OPENAI_API_KEY is set.\nCalling Image API (generation). This can take up to a couple of minutes.\nGeneration completed in 29.2s.",
+    "code": 0
+  }
+]
