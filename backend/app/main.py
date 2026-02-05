@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,16 +20,16 @@ from .settings import Settings, load_settings
 from .storage import GameNotFoundError, GameStorage
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app_settings = settings or load_settings()
     storage = GameStorage(app_settings.games_dir)
     manager = RunManager(
         storage=storage,
         project_root=app_settings.project_root,
         codex_bin=app_settings.codex_bin,
-        skill_phaser_path=app_settings.skill_phaser_path,
-        skill_playwright_path=app_settings.skill_playwright_path,
-        forbidden_path=app_settings.forbidden_path,
+        codex_model=app_settings.codex_model,
+        title_model=app_settings.title_model,
+        image_model=app_settings.image_model,
     )
 
     @asynccontextmanager
@@ -42,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="AI Game Studio API", lifespan=lifespan)
     app.state.storage = storage
     app.state.run_manager = manager
+    storage.ensure_games_dir()
 
     app.add_middleware(
         CORSMiddleware,
@@ -62,8 +63,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return storage.list_games()
 
     @app.post("/api/games", response_model=GameRecord)
-    async def create_game(request: CreateGameRequest) -> GameRecord:
-        return storage.create_game(request.title)
+    async def create_game(request: Optional[CreateGameRequest] = None) -> GameRecord:
+        return storage.create_game(request.title if request else None)
 
     @app.get("/api/games/{slug}", response_model=GameRecord)
     async def get_game(slug: str) -> GameRecord:

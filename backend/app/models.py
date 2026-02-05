@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,7 @@ class ChatMessage(BaseModel):
 
 
 class CreateGameRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
 class GenerateGameRequest(BaseModel):
@@ -27,6 +27,7 @@ class GameRecord(BaseModel):
     createdAt: datetime
     updatedAt: datetime
     previewUrl: str
+    imageUrl: Optional[str] = None
 
 
 class RunStatus(str, Enum):

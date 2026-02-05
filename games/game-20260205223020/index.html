@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pac Maze Dash</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #16213a 0%, #0a0f1f 45%, #05070f 100%);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      overflow: hidden;
+      color: #f7f3e8;
+    }
+
+    #game-container {
+      position: relative;
+      box-shadow: 0 16px 42px rgba(2, 6, 20, 0.7);
+      border: 3px solid #1f2b4f;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      background: #080b1a;
+    }
+
+    #ui-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .hud {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      color: #ffe08a;
+      font-weight: 800;
+      font-size: 20px;
+      text-shadow: 2px 2px 0 #020308;
+      letter-spacing: 1px;
+    }
+
+    #start-screen,
+    #game-over-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #f7f3e8;
+      background: rgba(6, 10, 20, 0.82);
+      text-align: center;
+      pointer-events: auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 42px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ffd166;
+      text-shadow: 3px 3px 0 #030512;
+    }
+
+    p {
+      margin: 0;
+      font-size: 17px;
+      color: #cbd5f0;
+      max-width: 440px;
+      line-height: 1.4;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 12px 30px;
+      font-size: 18px;
+      font-weight: 800;
+      border: none;
+      border-radius: 6px;
+      background: #ffd166;
+      color: #1b1f2e;
+      cursor: pointer;
+      box-shadow: 0 6px 0 #c5962f;
+    }
+
+    button:active {
+      transform: translateY(3px);
+      box-shadow: 0 3px 0 #c5962f;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+    <div id="ui-layer">
+      <div class="hud">
+        <div id="score-display">SCORE: 0</div>
+        <div id="status-display">LIVES: 3</div>
+      </div>
+
+      <div id="start-screen">
+        <h1>Pac Maze Dash</h1>
+        <p>Eat every pellet, dodge the ghosts, and grab power pellets to turn the tables.</p>
+        <p>Move with Arrow Keys / WASD. Tap or click a side of Pac to steer on touch devices.</p>
+        <button id="start-btn">PLAY</button>
+      </div>
+
+      <div id="game-over-screen" class="hidden">
+        <h1 id="game-over-title">Game Over</h1>
+        <p id="final-score">Score: 0</p>
+        <button id="restart-btn">RESTART</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 1. UTILITY CLASSES
+     */
+    class InputManager {
+      constructor() {
+        this.keys = {};
+        this.pressed = {};
+        this.down = {};
+        this.pointerDir = null;
+
+        window.addEventListener("keydown", (e) => {
+          if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+            e.preventDefault();
+          }
+          this.keys[e.code] = true;
+          if (!this.down[e.code]) {
+            this.pressed[e.code] = true;
+            this.down[e.code] = true;
+          }
+        }, { passive: false });
+
+        window.addEventListener("keyup", (e) => {
+          this.keys[e.code] = false;
+          this.down[e.code] = false;
+          this.pressed[e.code] = false;
+        });
+      }
+
+      isDown(code) {
+        return !!this.keys[code];
+      }
+
+      isPressed(code) {
+        return !!this.pressed[code];
+      }
+
+      getDirection() {
+        if (this.isDown("ArrowLeft") || this.isDown("KeyA")) return { x: -1, y: 0 };
+        if (this.isDown("ArrowRight") || this.isDown("KeyD")) return { x: 1, y: 0 };
+        if (this.isDown("ArrowUp") || this.isDown("KeyW")) return { x: 0, y: -1 };
+        if (this.isDown("ArrowDown") || this.isDown("KeyS")) return { x: 0, y: 1 };
+        return this.pointerDir;
+      }
+
+      setPointerDirection(dir) {
+        this.pointerDir = dir;
+      }
+
+      endFrame() {
+        for (const code in this.pressed) {
+          this.pressed[code] = false;
+        }
+      }
+    }
+
+    const DIRECTIONS = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 }
+    ];
+
+    const MAP_LAYOUT = [
+      "############################",
+      "#............##............#",
+      "#.####.#####.##.#####.####.#",
+      "#o####.#####.##.#####.####o#",
+      "#..........................#",
+      "#.####.##.########.##.####.#",
+      "#......##....##....##......#",
+      "######.#####.##.#####.######",
+      "######.##..........##.######",
+      "#............##............#",
+      "#.####.#####.##.#####.####.#",
+      "#o..##................##..o#",
+      "#.####.#####.##.#####.####.#",
+      "#............##............#",
+      "######.##.########.##.######",
+      "#......##....##....##......#",
+      "#.##########.##.##########.#",
+      "#..........................#",
+      "#.####.#####.##.#####.####.#",
+      "#o####.#####.##.#####.####o#",
+      "#............##............#",
+      "######.##.########.##.######",
+      "#..........................#",
+      "############################"
+    ];
+
+    /**
+     * 2. BASE GAME OBJECT
+     */
+    class GameObject {
+      constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.markedForDeletion = false;
+      }
+
+      update(dt) {}
+      render(ctx) {}
+    }
+
+    /**
+     * 3. GAME ENTITIES
+     */
+    class Pacman extends GameObject {
+      constructor(col, row, game) {
+        const radius = game.tileSize * 0.38;
+        super(0, 0, radius * 2, radius * 2);
+        this.radius = radius;
+        this.speed = game.tileSize * 6.2;
+        this.dir = { x: 1, y: 0 };
+        this.nextDir = { x: 1, y: 0 };
+        this.mouthTimer = 0;
+        this.reset(col, row, game);
+      }
+
+      reset(col, row, game) {
+        const pos = game.gridToWorldCenter(col, row);
+        this.x = pos.x;
+        this.y = pos.y;
+        this.dir = { x: 1, y: 0 };
+        this.nextDir = { x: 1, y: 0 };
+        this.mouthTimer = 0;
+      }
+
+      update(dt, game, input) {
+        const intent = input.getDirection();
+        if (intent) {
+          this.nextDir = { x: intent.x, y: intent.y };
+        }
+
+        const grid = game.worldToGrid(this.x, this.y);
+        const center = game.gridToWorldCenter(grid.col, grid.row);
+        const nearCenter = Math.abs(this.x - center.x) < game.turnTolerance && Math.abs(this.y - center.y) < game.turnTolerance;
+
+        if (nearCenter) {
+          this.x = center.x;
+          this.y = center.y;
+          if (game.isOpen(grid.col + this.nextDir.x, grid.row + this.nextDir.y)) {
+            this.dir = { x: this.nextDir.x, y: this.nextDir.y };
+          } else if (!game.isOpen(grid.col + this.dir.x, grid.row + this.dir.y)) {
+            this.dir = { x: 0, y: 0 };
+          }
+        }
+
+        this.x += this.dir.x * this.speed * dt;
+        this.y += this.dir.y * this.speed * dt;
+
+        const newGrid = game.worldToGrid(this.x, this.y);
+        if (!game.isOpen(newGrid.col, newGrid.row)) {
+          this.x = center.x;
+          this.y = center.y;
+          this.dir = { x: 0, y: 0 };
+        }
+
+        this.mouthTimer += dt * 8;
+      }
+
+      render(ctx, game) {
+        const mouthOpen = 0.18 + 0.12 * Math.abs(Math.sin(this.mouthTimer));
+        let angle = 0;
+        if (this.dir.x === 1) angle = 0;
+        if (this.dir.x === -1) angle = Math.PI;
+        if (this.dir.y === -1) angle = -Math.PI / 2;
+        if (this.dir.y === 1) angle = Math.PI / 2;
+
+        ctx.save();
+        ctx.fillStyle = "#ffd166";
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.arc(this.x, this.y, this.radius, angle + mouthOpen, angle - mouthOpen, false);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    class Ghost extends GameObject {
+      constructor(col, row, color, behavior, game) {
+        const radius = game.tileSize * 0.38;
+        super(0, 0, radius * 2, radius * 2);
+        this.radius = radius;
+        this.baseSpeed = game.tileSize * 5.1;
+        this.color = color;
+        this.behavior = behavior;
+        this.home = { col, row };
+        this.dir = { x: 1, y: 0 };
+        this.isEaten = false;
+        this.respawnTimer = 0;
+        this.reset(game);
+      }
+
+      reset(game) {
+        const pos = game.gridToWorldCenter(this.home.col, this.home.row);
+        this.x = pos.x;
+        this.y = pos.y;
+        this.dir = { x: 1, y: 0 };
+        this.isEaten = false;
+        this.respawnTimer = 0;
+      }
+
+      eat() {
+        this.isEaten = true;
+        this.respawnTimer = 2.2;
+      }
+
+      chooseDirection(game, frightened) {
+        const grid = game.worldToGrid(this.x, this.y);
+        const options = [];
+        for (const dir of DIRECTIONS) {
+          if (game.isOpen(grid.col + dir.x, grid.row + dir.y)) {
+            options.push(dir);
+          }
+        }
+        if (options.length === 0) {
+          this.dir = { x: 0, y: 0 };
+          return;
+        }
+
+        const opposite = { x: -this.dir.x, y: -this.dir.y };
+        let filtered = options;
+        if (options.length > 1) {
+          filtered = options.filter((dir) => !(dir.x === opposite.x && dir.y === opposite.y));
+        }
+
+        if (frightened) {
+          this.dir = filtered[Math.floor(Math.random() * filtered.length)];
+          return;
+        }
+
+        let target = game.getTargetTile(this.behavior);
+        let best = filtered[0];
+        let bestDist = Infinity;
+        for (const dir of filtered) {
+          const col = grid.col + dir.x;
+          const row = grid.row + dir.y;
+          const dx = target.col - col;
+          const dy = target.row - row;
+          const dist = dx * dx + dy * dy;
+          if (dist < bestDist - 0.0001) {
+            bestDist = dist;
+            best = dir;
+          }
+        }
+        if (Math.random() < 0.12) {
+          this.dir = filtered[Math.floor(Math.random() * filtered.length)];
+        } else {
+          this.dir = best;
+        }
+      }
+
+      update(dt, game) {
+        if (this.isEaten) {
+          this.respawnTimer -= dt;
+          if (this.respawnTimer <= 0) {
+            this.reset(game);
+          }
+          return;
+        }
+
+        const frightened = game.frightenedTimer > 0;
+        const speed = this.baseSpeed * (frightened ? 0.7 : 1);
+        const grid = game.worldToGrid(this.x, this.y);
+        const center = game.gridToWorldCenter(grid.col, grid.row);
+        const nearCenter = Math.abs(this.x - center.x) < game.turnTolerance && Math.abs(this.y - center.y) < game.turnTolerance;
+
+        if (nearCenter) {
+          this.x = center.x;
+          this.y = center.y;
+          this.chooseDirection(game, frightened);
+        }
+
+        this.x += this.dir.x * speed * dt;
+        this.y += this.dir.y * speed * dt;
+
+        const newGrid = game.worldToGrid(this.x, this.y);
+        if (!game.isOpen(newGrid.col, newGrid.row)) {
+          this.x = center.x;
+          this.y = center.y;
+          this.chooseDirection(game, frightened);
+        }
+      }
+
+      render(ctx, game) {
+        if (this.isEaten) {
+          ctx.fillStyle = "#e2f1ff";
+          ctx.beginPath();
+          ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.2, 0, Math.PI * 2);
+          ctx.arc(this.x + this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.2, 0, Math.PI * 2);
+          ctx.fill();
+          return;
+        }
+
+        const frightened = game.frightenedTimer > 0;
+        let color = this.color;
+        if (frightened) {
+          const flash = game.frightenedTimer < 2 && Math.floor(game.time * 8) % 2 === 0;
+          color = flash ? "#f7f3e8" : "#4d8bff";
+        }
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y - this.radius * 0.1, this.radius, Math.PI, 0);
+        ctx.lineTo(this.x + this.radius, this.y + this.radius * 0.9);
+        ctx.lineTo(this.x - this.radius, this.y + this.radius * 0.9);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#f7f3e8";
+        ctx.beginPath();
+        ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.28, 0, Math.PI * 2);
+        ctx.arc(this.x + this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#20336b";
+        ctx.beginPath();
+        ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.12, 0, Math.PI * 2);
+        ctx.arc(this.x + this.radius * 0.35, this.y - this.radius * 0.1, this.radius * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    class Particle extends GameObject {
+      constructor(x, y, color) {
+        super(x, y, 4, 4);
+        this.vx = (Math.random() - 0.5) * 140;
+        this.vy = (Math.random() - 0.5) * 140;
+        this.life = 0.9;
+        this.color = color;
+      }
+
+      update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt * 1.8;
+        if (this.life <= 0) this.markedForDeletion = true;
+      }
+
+      render(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    /**
+     * 4. GAME MANAGER
+     */
+    class Game {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.input = new InputManager();
+
+        this.tileSize = 20;
+        this.gridW = MAP_LAYOUT[0].length;
+        this.gridH = MAP_LAYOUT.length;
+        this.offsetX = (canvas.width - this.gridW * this.tileSize) / 2;
+        this.offsetY = (canvas.height - this.gridH * this.tileSize) / 2;
+        this.turnTolerance = 2.2;
+
+        this.ui = {
+          start: document.getElementById("start-screen"),
+          over: document.getElementById("game-over-screen"),
+          score: document.getElementById("score-display"),
+          status: document.getElementById("status-display"),
+          finalScore: document.getElementById("final-score"),
+          overTitle: document.getElementById("game-over-title")
+        };
+
+        document.getElementById("start-btn").addEventListener("click", () => this.startGame());
+        document.getElementById("restart-btn").addEventListener("click", () => this.startGame());
+
+        this.canvas.addEventListener("pointerdown", (e) => this.handlePointer(e), { passive: false });
+        this.canvas.addEventListener("pointermove", (e) => {
+          if (e.buttons) this.handlePointer(e);
+        }, { passive: false });
+
+        this.state = "START";
+        this.lastTime = performance.now();
+        this.time = 0;
+        this.reset();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      buildMap() {
+        const grid = [];
+        let pellets = 0;
+        for (let row = 0; row < MAP_LAYOUT.length; row++) {
+          const rowData = [];
+          for (let col = 0; col < MAP_LAYOUT[row].length; col++) {
+            const ch = MAP_LAYOUT[row][col];
+            const cell = {
+              wall: ch === "#",
+              pellet: ch === "." || ch === "o",
+              power: ch === "o"
+            };
+            if (cell.pellet) pellets += 1;
+            rowData.push(cell);
+          }
+          grid.push(rowData);
+        }
+        return { grid, pellets };
+      }
+
+      reset() {
+        const mapData = this.buildMap();
+        this.map = mapData.grid;
+        this.pelletsLeft = mapData.pellets;
+        this.score = 0;
+        this.lives = 3;
+        this.frightenedTimer = 0;
+        this.freezeTimer = 0;
+        this.playerStart = { col: 13, row: 17 };
+        this.ghostStarts = [
+          { col: 13, row: 11, color: "#ff6b6b", behavior: "chase" },
+          { col: 14, row: 11, color: "#4dd2ff", behavior: "ambush" },
+          { col: 12, row: 11, color: "#f7b267", behavior: "scatter" },
+          { col: 15, row: 11, color: "#b388ff", behavior: "random" }
+        ];
+
+        this.player = new Pacman(this.playerStart.col, this.playerStart.row, this);
+        this.ghosts = this.ghostStarts.map((g) => new Ghost(g.col, g.row, g.color, g.behavior, this));
+        this.particles = [];
+        this.updateUI();
+      }
+
+      startGame() {
+        this.reset();
+        this.ui.start.classList.add("hidden");
+        this.ui.over.classList.add("hidden");
+        this.state = "PLAYING";
+      }
+
+      updateUI() {
+        this.ui.score.textContent = `SCORE: ${Math.floor(this.score)}`;
+        this.ui.status.textContent = `LIVES: ${this.lives}  PELLETS: ${this.pelletsLeft}`;
+      }
+
+      worldToGrid(x, y) {
+        const col = Math.floor((x - this.offsetX) / this.tileSize);
+        const row = Math.floor((y - this.offsetY) / this.tileSize);
+        return { col, row };
+      }
+
+      gridToWorldCenter(col, row) {
+        return {
+          x: this.offsetX + col * this.tileSize + this.tileSize / 2,
+          y: this.offsetY + row * this.tileSize + this.tileSize / 2
+        };
+      }
+
+      isWall(col, row) {
+        if (col < 0 || row < 0 || col >= this.gridW || row >= this.gridH) return true;
+        return this.map[row][col].wall;
+      }
+
+      isOpen(col, row) {
+        return !this.isWall(col, row);
+      }
+
+      handlePointer(event) {
+        event.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        const dx = x - this.player.x;
+        const dy = y - this.player.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          this.input.setPointerDirection({ x: dx > 0 ? 1 : -1, y: 0 });
+        } else {
+          this.input.setPointerDirection({ x: 0, y: dy > 0 ? 1 : -1 });
+        }
+      }
+
+      getTargetTile(behavior) {
+        const playerGrid = this.worldToGrid(this.player.x, this.player.y);
+        if (behavior === "ambush") {
+          return {
+            col: playerGrid.col + this.player.dir.x * 4,
+            row: playerGrid.row + this.player.dir.y * 4
+          };
+        }
+        if (behavior === "scatter") {
+          return { col: 1, row: 1 };
+        }
+        if (behavior === "random") {
+          return {
+            col: Math.floor(Math.random() * (this.gridW - 2)) + 1,
+            row: Math.floor(Math.random() * (this.gridH - 2)) + 1
+          };
+        }
+        return playerGrid;
+      }
+
+      createBurst(x, y, color, count = 14) {
+        for (let i = 0; i < count; i++) {
+          this.particles.push(new Particle(x, y, color));
+        }
+      }
+
+      consumePellet() {
+        const grid = this.worldToGrid(this.player.x, this.player.y);
+        if (grid.col < 0 || grid.row < 0 || grid.col >= this.gridW || grid.row >= this.gridH) return;
+        const cell = this.map[grid.row][grid.col];
+        if (!cell || cell.wall || !cell.pellet) return;
+
+        cell.pellet = false;
+        this.pelletsLeft -= 1;
+        if (cell.power) {
+          cell.power = false;
+          this.score += 50;
+          this.frightenedTimer = 6;
+          this.createBurst(this.player.x, this.player.y, "#8bd3ff", 18);
+        } else {
+          this.score += 10;
+          this.createBurst(this.player.x, this.player.y, "#ffd166", 6);
+        }
+      }
+
+      handleGhostCollision() {
+        for (const ghost of this.ghosts) {
+          if (ghost.isEaten) continue;
+          const dx = ghost.x - this.player.x;
+          const dy = ghost.y - this.player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < this.tileSize * 0.55) {
+            if (this.frightenedTimer > 0) {
+              ghost.eat();
+              this.score += 200;
+              this.createBurst(ghost.x, ghost.y, "#f7f3e8", 16);
+            } else {
+              this.loseLife();
+            }
+            return;
+          }
+        }
+      }
+
+      loseLife() {
+        this.lives -= 1;
+        this.createBurst(this.player.x, this.player.y, "#ff6b6b", 20);
+        this.frightenedTimer = 0;
+        if (this.lives <= 0) {
+          this.gameOver(false);
+        } else {
+          this.resetPositions();
+          this.freezeTimer = 1.0;
+        }
+      }
+
+      resetPositions() {
+        this.player.reset(this.playerStart.col, this.playerStart.row, this);
+        this.ghosts.forEach((ghost, index) => {
+          const start = this.ghostStarts[index];
+          ghost.home = { col: start.col, row: start.row };
+          ghost.reset(this);
+        });
+      }
+
+      gameOver(won) {
+        this.state = "GAMEOVER";
+        this.ui.overTitle.textContent = won ? "You Win!" : "Game Over";
+        this.ui.finalScore.textContent = `Score: ${Math.floor(this.score)}`;
+        this.ui.over.classList.remove("hidden");
+      }
+
+      update(dt) {
+        if (this.freezeTimer > 0) {
+          this.freezeTimer = Math.max(0, this.freezeTimer - dt);
+          return;
+        }
+
+        this.player.update(dt, this, this.input);
+        this.consumePellet();
+
+        if (this.frightenedTimer > 0) {
+          this.frightenedTimer = Math.max(0, this.frightenedTimer - dt);
+        }
+
+        this.ghosts.forEach((ghost) => ghost.update(dt, this));
+        this.handleGhostCollision();
+
+        this.particles.forEach((p) => p.update(dt));
+        this.particles = this.particles.filter((p) => !p.markedForDeletion);
+
+        if (this.pelletsLeft <= 0) {
+          this.gameOver(true);
+        }
+
+        this.updateUI();
+      }
+
+      renderMaze() {
+        const ctx = this.ctx;
+        for (let row = 0; row < this.gridH; row++) {
+          for (let col = 0; col < this.gridW; col++) {
+            const cell = this.map[row][col];
+            const x = this.offsetX + col * this.tileSize;
+            const y = this.offsetY + row * this.tileSize;
+            if (cell.wall) {
+              ctx.fillStyle = "#1b3b9a";
+              ctx.fillRect(x, y, this.tileSize, this.tileSize);
+              ctx.strokeStyle = "rgba(90, 180, 255, 0.35)";
+              ctx.strokeRect(x + 1.5, y + 1.5, this.tileSize - 3, this.tileSize - 3);
+            } else if (cell.pellet) {
+              ctx.fillStyle = cell.power ? "#8bd3ff" : "#ffd166";
+              const pulse = cell.power ? 2 + 1.2 * Math.sin(this.time * 6) : 0;
+              const r = cell.power ? 4.2 + pulse : 2.4;
+              ctx.beginPath();
+              ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2, r, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      }
+
+      render() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        this.ctx.fillStyle = "#080b1a";
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        this.renderMaze();
+        this.player.render(this.ctx, this);
+        this.ghosts.forEach((ghost) => ghost.render(this.ctx, this));
+        this.particles.forEach((p) => p.render(this.ctx));
+      }
+
+      loop(timestamp) {
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+        this.time += dt;
+
+        if (this.state !== "PLAYING") {
+          if (this.input.isPressed("Enter") || this.input.isPressed("Space")) {
+            this.startGame();
+          }
+        } else {
+          this.update(dt);
+        }
+
+        this.render();
+        this.input.endFrame();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+    }
+
+    /**
+     * 5. INITIALIZATION
+     */
+    window.onload = () => {
+      const canvas = document.getElementById("gameCanvas");
+      const game = new Game(canvas);
+      // Starts on start screen; click PLAY or press Enter/Space.
+    };
+  </script>
+</body>
+</html>

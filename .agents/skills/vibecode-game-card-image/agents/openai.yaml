@@ -1,0 +1,4 @@
+version: 1
+display_name: Vibecode Game Card Image
+short_description: Generate a single polished card image for each game folder.
+default_prompt: Create or refresh card.png for this game based on the gameplay theme and current files.

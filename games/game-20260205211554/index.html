@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Rail Rush</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #1d2844, #0b0f1e 60%);
+      font-family: "Trebuchet MS", "Segoe UI", Tahoma, sans-serif;
+      overflow: hidden;
+    }
+
+    #game-container {
+      position: relative;
+      box-shadow: 0 16px 45px rgba(0, 0, 0, 0.45);
+      border: 3px solid #2b3350;
+      background: #0a0f1f;
+    }
+
+    canvas {
+      display: block;
+      background: linear-gradient(#0b1428, #182742 55%, #121823 55%);
+    }
+
+    #ui-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #f6f7fb;
+      font-weight: 700;
+      font-size: 18px;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    .hud div {
+      padding: 6px 12px;
+      background: rgba(7, 12, 26, 0.6);
+      border-radius: 6px;
+      border: 1px solid rgba(120, 150, 240, 0.2);
+    }
+
+    #start-screen,
+    #game-over-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #fff;
+      background: rgba(5, 7, 12, 0.84);
+      text-align: center;
+      pointer-events: auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 42px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    p {
+      margin: 0;
+      font-size: 16px;
+      color: #c9d2f0;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 12px 28px;
+      font-size: 18px;
+      font-weight: 700;
+      border: none;
+      border-radius: 6px;
+      background: #f2c94c;
+      color: #1f222a;
+      cursor: pointer;
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.35);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+    <div id="ui-layer">
+      <div class="hud">
+        <div id="score-display">SCORE: 0</div>
+        <div id="coin-display">COINS: 0</div>
+        <div id="speed-display">SPEED: 0</div>
+      </div>
+
+      <div id="start-screen">
+        <h1>Neon Rail Rush</h1>
+        <p>Surf the neon rails and dodge the city hazards.</p>
+        <p>Move: A/D or ←/→ (swipe left/right)</p>
+        <p>Jump: W/↑/Space (swipe up) · Roll: S/↓ (swipe down)</p>
+        <p>Tap left/right to change lanes, tap center to jump.</p>
+        <button id="start-btn">PLAY</button>
+      </div>
+
+      <div id="game-over-screen" class="hidden">
+        <h1>Crash!</h1>
+        <p id="final-score">Score: 0</p>
+        <p id="final-coins">Coins: 0</p>
+        <button id="restart-btn">RESTART</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 1. UTILITY CLASSES
+     */
+    class InputManager {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.keys = {};
+        this.pressed = {};
+        this.down = {};
+        this.tap = null;
+        this.swipe = null;
+        this.pointerStart = null;
+
+        window.addEventListener("keydown", (e) => {
+          this.keys[e.code] = true;
+          if (!this.down[e.code]) {
+            this.pressed[e.code] = true;
+            this.down[e.code] = true;
+          }
+        });
+
+        window.addEventListener("keyup", (e) => {
+          this.keys[e.code] = false;
+          this.down[e.code] = false;
+          this.pressed[e.code] = false;
+        });
+
+        canvas.addEventListener("mousedown", (e) => {
+          const pos = this.getCanvasPos(e);
+          this.pointerStart = pos;
+        });
+
+        window.addEventListener("mouseup", (e) => {
+          if (!this.pointerStart) return;
+          const pos = this.getCanvasPos(e);
+          this.registerPointerEnd(pos);
+        });
+
+        canvas.addEventListener(
+          "touchstart",
+          (e) => {
+            e.preventDefault();
+            const pos = this.getCanvasPos(e.touches[0]);
+            this.pointerStart = pos;
+          },
+          { passive: false }
+        );
+
+        canvas.addEventListener(
+          "touchend",
+          (e) => {
+            e.preventDefault();
+            if (!this.pointerStart) return;
+            const touch = e.changedTouches[0];
+            const pos = this.getCanvasPos(touch);
+            this.registerPointerEnd(pos);
+          },
+          { passive: false }
+        );
+      }
+
+      getCanvasPos(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+          x: (event.clientX - rect.left) * (this.canvas.width / rect.width),
+          y: (event.clientY - rect.top) * (this.canvas.height / rect.height)
+        };
+      }
+
+      registerPointerEnd(pos) {
+        const dx = pos.x - this.pointerStart.x;
+        const dy = pos.y - this.pointerStart.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 35) {
+          this.swipe = { dx, dy };
+        } else {
+          this.tap = { x: pos.x, y: pos.y };
+        }
+        this.pointerStart = null;
+      }
+
+      isDown(code) {
+        return !!this.keys[code];
+      }
+
+      isPressed(code) {
+        return !!this.pressed[code];
+      }
+
+      consumeSwipe() {
+        const swipe = this.swipe;
+        this.swipe = null;
+        return swipe;
+      }
+
+      consumeTap() {
+        const tap = this.tap;
+        this.tap = null;
+        return tap;
+      }
+
+      endFrame() {
+        for (const code in this.pressed) {
+          this.pressed[code] = false;
+        }
+      }
+    }
+
+    class Projection {
+      static configure({ fov, cx, horizon, ground }) {
+        Projection.fov = fov;
+        Projection.cx = cx;
+        Projection.horizon = horizon;
+        Projection.ground = ground;
+      }
+
+      static project(x, z, y = 0) {
+        const scale = Projection.fov / (z + Projection.fov);
+        return {
+          x: Projection.cx + x * scale,
+          y: Projection.horizon + Projection.ground * scale - y * scale,
+          scale
+        };
+      }
+    }
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    /**
+     * 2. BASE GAME OBJECT
+     */
+    class GameObject {
+      constructor() {
+        this.markedForDeletion = false;
+      }
+
+      update(dt, game) {}
+      render(ctx, game) {}
+    }
+
+    /**
+     * 3. GAME ENTITIES
+     */
+    class Runner extends GameObject {
+      constructor(laneX) {
+        super();
+        this.laneX = laneX;
+        this.lane = 1;
+        this.targetLane = 1;
+        this.x = laneX[this.lane];
+        this.width = 42;
+        this.height = 70;
+        this.jumpTime = 0;
+        this.jumpDuration = 0.7;
+        this.jumpHeight = 95;
+        this.rollTime = 0;
+        this.rollDuration = 0.6;
+      }
+
+      setLane(index) {
+        this.targetLane = clamp(index, 0, this.laneX.length - 1);
+      }
+
+      jump() {
+        if (this.jumpTime > 0 || this.rollTime > 0) return;
+        this.jumpTime = 0.001;
+      }
+
+      roll() {
+        if (this.rollTime > 0 || this.jumpTime > 0) return;
+        this.rollTime = 0.001;
+      }
+
+      update(dt) {
+        const targetX = this.laneX[this.targetLane];
+        this.x = lerp(this.x, targetX, clamp(dt * 12, 0, 1));
+        if (Math.abs(this.x - targetX) < 0.5) this.lane = this.targetLane;
+
+        if (this.jumpTime > 0) {
+          this.jumpTime += dt;
+          if (this.jumpTime >= this.jumpDuration) this.jumpTime = 0;
+        }
+
+        if (this.rollTime > 0) {
+          this.rollTime += dt;
+          if (this.rollTime >= this.rollDuration) this.rollTime = 0;
+        }
+      }
+
+      get jumpOffset() {
+        if (this.jumpTime <= 0) return 0;
+        const t = this.jumpTime / this.jumpDuration;
+        return Math.sin(Math.PI * t) * this.jumpHeight;
+      }
+
+      get isJumping() {
+        return this.jumpTime > 0;
+      }
+
+      get isRolling() {
+        return this.rollTime > 0;
+      }
+
+      render(ctx) {
+        const foot = Projection.project(this.x, 0, this.jumpOffset);
+        const rollFactor = this.isRolling ? 0.55 : 1;
+        const bodyHeight = this.height * rollFactor;
+        const bodyWidth = this.width;
+        const baseY = foot.y;
+        const bodyX = foot.x - bodyWidth / 2;
+        const bodyY = baseY - bodyHeight;
+
+        ctx.save();
+        ctx.fillStyle = "#4fd1ff";
+        ctx.shadowColor = "rgba(79, 209, 255, 0.6)";
+        ctx.shadowBlur = 12;
+        ctx.fillRect(bodyX, bodyY, bodyWidth, bodyHeight);
+
+        ctx.fillStyle = "#ff8af5";
+        ctx.shadowBlur = 0;
+        ctx.fillRect(bodyX + bodyWidth * 0.2, bodyY + bodyHeight * 0.18, bodyWidth * 0.6, bodyHeight * 0.28);
+
+        ctx.fillStyle = "#1b2034";
+        ctx.fillRect(bodyX + bodyWidth * 0.25, baseY - 10, bodyWidth * 0.5, 8);
+        ctx.restore();
+      }
+    }
+
+    class Obstacle extends GameObject {
+      constructor(lane, z, type) {
+        super();
+        this.lane = lane;
+        this.z = z;
+        this.type = type;
+        this.width = type === "barrier" ? 90 : 62;
+        this.height = type === "barrier" ? 26 : 62;
+        this.clearance = 70;
+      }
+
+      update(dt, game) {
+        this.z -= game.speed * dt;
+        if (this.z < game.cullZ) this.markedForDeletion = true;
+      }
+
+      render(ctx, game) {
+        const x = game.laneX[this.lane];
+        if (this.type === "barrier") {
+          const base = Projection.project(x, this.z, this.clearance);
+          const width = this.width * base.scale;
+          const height = this.height * base.scale;
+          ctx.fillStyle = "#ff8a5b";
+          ctx.fillRect(base.x - width / 2, base.y - height, width, height);
+
+          ctx.fillStyle = "#3f2b3b";
+          const poleWidth = 10 * base.scale;
+          const poleHeight = 70 * base.scale;
+          ctx.fillRect(base.x - width / 2 + 6 * base.scale, base.y - height, poleWidth, poleHeight);
+          ctx.fillRect(base.x + width / 2 - 16 * base.scale, base.y - height, poleWidth, poleHeight);
+        } else {
+          const base = Projection.project(x, this.z);
+          const width = this.width * base.scale;
+          const height = this.height * base.scale;
+          ctx.fillStyle = "#ff4b6e";
+          ctx.fillRect(base.x - width / 2, base.y - height, width, height);
+
+          ctx.fillStyle = "rgba(255,255,255,0.25)";
+          ctx.fillRect(base.x - width / 2 + 6 * base.scale, base.y - height + 8 * base.scale, width * 0.7, height * 0.2);
+        }
+      }
+    }
+
+    class Coin extends GameObject {
+      constructor(lane, z) {
+        super();
+        this.lane = lane;
+        this.z = z;
+        this.radius = 16;
+        this.spin = Math.random() * Math.PI;
+      }
+
+      update(dt, game) {
+        this.z -= game.speed * dt;
+        this.spin += dt * 6;
+        if (this.z < game.cullZ) this.markedForDeletion = true;
+      }
+
+      render(ctx, game) {
+        const x = game.laneX[this.lane];
+        const base = Projection.project(x, this.z, 28 + Math.sin(this.spin) * 8);
+        const radius = this.radius * base.scale;
+        ctx.beginPath();
+        ctx.fillStyle = "#ffd166";
+        ctx.strokeStyle = "rgba(255, 215, 120, 0.7)";
+        ctx.lineWidth = 3 * base.scale;
+        ctx.arc(base.x, base.y - radius, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    class Streak extends GameObject {
+      constructor(x, z) {
+        super();
+        this.x = x;
+        this.z = z;
+      }
+
+      update(dt, game) {
+        this.z -= game.speed * dt;
+        if (this.z < 40) {
+          this.z = game.spawnZ + Math.random() * 500;
+          this.x = (Math.random() * 2 - 1) * game.roadHalfWidth * 0.8;
+        }
+      }
+
+      render(ctx) {
+        const p1 = Projection.project(this.x, this.z);
+        const p2 = Projection.project(this.x, this.z + 80);
+        ctx.strokeStyle = "rgba(140, 200, 255, 0.25)";
+        ctx.lineWidth = 2 * p1.scale;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+    }
+
+    class Particle extends GameObject {
+      constructor(x, y, color) {
+        super();
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 220;
+        this.vy = (Math.random() - 0.8) * 220;
+        this.life = 1;
+        this.color = color;
+      }
+
+      update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt * 2;
+        if (this.life <= 0) this.markedForDeletion = true;
+      }
+
+      render(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    /**
+     * 4. GAME MANAGER
+     */
+    class Game {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.input = new InputManager(canvas);
+
+        this.ui = {
+          start: document.getElementById("start-screen"),
+          over: document.getElementById("game-over-screen"),
+          score: document.getElementById("score-display"),
+          coins: document.getElementById("coin-display"),
+          speed: document.getElementById("speed-display"),
+          finalScore: document.getElementById("final-score"),
+          finalCoins: document.getElementById("final-coins")
+        };
+
+        document.getElementById("start-btn").addEventListener("click", () => this.startGame());
+        document.getElementById("restart-btn").addEventListener("click", () => this.startGame());
+
+        this.state = "START";
+        this.width = canvas.width;
+        this.height = canvas.height;
+        this.centerX = this.width / 2;
+        this.horizon = 120;
+        this.ground = 260;
+        this.fov = 300;
+        this.roadHalfWidth = 220;
+        this.laneX = [-140, 0, 140];
+        this.spawnZ = 1400;
+        this.cullZ = -80;
+        this.hitZ = 60;
+        this.speed = 420;
+        this.speedRamp = 6;
+
+        Projection.configure({
+          fov: this.fov,
+          cx: this.centerX,
+          horizon: this.horizon,
+          ground: this.ground
+        });
+
+        this.skyline = this.buildSkyline();
+        this.reset();
+
+        this.lastTime = performance.now();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      buildSkyline() {
+        const buildings = [];
+        let x = 0;
+        while (x < this.width + 60) {
+          const w = 40 + Math.random() * 50;
+          const h = 40 + Math.random() * 90;
+          buildings.push({ x, w, h });
+          x += w + 10 + Math.random() * 20;
+        }
+        return buildings;
+      }
+
+      reset() {
+        this.player = new Runner(this.laneX);
+        this.obstacles = [];
+        this.coins = [];
+        this.particles = [];
+        this.streaks = [];
+        this.elapsed = 0;
+        this.score = 0;
+        this.distance = 0;
+        this.coinsCollected = 0;
+        this.spawnTimer = 0.7;
+        this.speed = 420;
+        this.shakeTime = 0;
+        this.flashTime = 0;
+
+        for (let i = 0; i < 24; i++) {
+          const x = (Math.random() * 2 - 1) * this.roadHalfWidth * 0.8;
+          const z = 200 + Math.random() * this.spawnZ;
+          this.streaks.push(new Streak(x, z));
+        }
+
+        this.updateUI();
+      }
+
+      startGame() {
+        this.reset();
+        this.state = "PLAYING";
+        this.ui.start.classList.add("hidden");
+        this.ui.over.classList.add("hidden");
+      }
+
+      gameOver() {
+        this.state = "GAMEOVER";
+        this.ui.finalScore.textContent = `Score: ${Math.floor(this.score)}`;
+        this.ui.finalCoins.textContent = `Coins: ${this.coinsCollected}`;
+        this.ui.over.classList.remove("hidden");
+      }
+
+      updateUI() {
+        this.ui.score.textContent = `SCORE: ${Math.floor(this.score)}`;
+        this.ui.coins.textContent = `COINS: ${this.coinsCollected}`;
+        this.ui.speed.textContent = `SPEED: ${Math.floor(this.speed)}`;
+      }
+
+      handleInput() {
+        if (this.input.isPressed("ArrowLeft") || this.input.isPressed("KeyA")) {
+          this.player.setLane(this.player.targetLane - 1);
+        }
+        if (this.input.isPressed("ArrowRight") || this.input.isPressed("KeyD")) {
+          this.player.setLane(this.player.targetLane + 1);
+        }
+        if (this.input.isPressed("ArrowUp") || this.input.isPressed("KeyW") || this.input.isPressed("Space")) {
+          this.player.jump();
+        }
+        if (this.input.isPressed("ArrowDown") || this.input.isPressed("KeyS")) {
+          this.player.roll();
+        }
+
+        const swipe = this.input.consumeSwipe();
+        if (swipe) {
+          if (Math.abs(swipe.dx) > Math.abs(swipe.dy)) {
+            if (swipe.dx > 0) this.player.setLane(this.player.targetLane + 1);
+            else this.player.setLane(this.player.targetLane - 1);
+          } else {
+            if (swipe.dy < 0) this.player.jump();
+            else this.player.roll();
+          }
+        }
+
+        const tap = this.input.consumeTap();
+        if (tap) {
+          if (tap.x < this.width * 0.33) this.player.setLane(this.player.targetLane - 1);
+          else if (tap.x > this.width * 0.66) this.player.setLane(this.player.targetLane + 1);
+          else this.player.jump();
+        }
+      }
+
+      spawnWave() {
+        const lane = Math.floor(Math.random() * 3);
+        const type = Math.random() < 0.6 ? "crate" : "barrier";
+        this.obstacles.push(new Obstacle(lane, this.spawnZ, type));
+
+        const coinChance = Math.random();
+        if (coinChance < 0.7) {
+          const coinLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % 3;
+          const count = 3 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < count; i++) {
+            this.coins.push(new Coin(coinLane, this.spawnZ + 140 + i * 90));
+          }
+        } else {
+          const count = 4 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < count; i++) {
+            this.coins.push(new Coin(lane, this.spawnZ + 120 + i * 80));
+          }
+        }
+      }
+
+      createImpact(x, y) {
+        for (let i = 0; i < 16; i++) {
+          this.particles.push(new Particle(x, y, "#ffd166"));
+        }
+      }
+
+      update(dt) {
+        if (this.flashTime > 0) this.flashTime = Math.max(0, this.flashTime - dt);
+        if (this.shakeTime > 0) this.shakeTime = Math.max(0, this.shakeTime - dt);
+
+        const wantsStart = this.input.isPressed("Space") || this.input.isPressed("Enter");
+        if (this.state !== "PLAYING" && wantsStart) {
+          this.startGame();
+          return;
+        }
+
+        if (this.state !== "PLAYING") {
+          this.streaks.forEach((s) => s.update(dt * 0.2, this));
+          return;
+        }
+
+        this.elapsed += dt;
+        this.speed += this.speedRamp * dt;
+        this.distance += this.speed * dt;
+        this.score = this.distance * 0.05 + this.coinsCollected * 12;
+
+        this.handleInput();
+        this.player.update(dt, this);
+
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) {
+          this.spawnWave();
+          const baseInterval = Math.max(0.45, 0.9 - this.elapsed * 0.015);
+          this.spawnTimer = baseInterval + Math.random() * 0.2;
+        }
+
+        this.streaks.forEach((s) => s.update(dt, this));
+        this.obstacles.forEach((o) => o.update(dt, this));
+        this.coins.forEach((c) => c.update(dt, this));
+        this.particles.forEach((p) => p.update(dt, this));
+
+        for (const coin of this.coins) {
+          if (coin.markedForDeletion) continue;
+          if (coin.lane === this.player.lane && coin.z < this.hitZ && coin.z > -20) {
+            coin.markedForDeletion = true;
+            this.coinsCollected += 1;
+            this.score += 20;
+            const pos = Projection.project(this.laneX[coin.lane], coin.z, 40);
+            this.createImpact(pos.x, pos.y);
+          }
+        }
+
+        for (const obstacle of this.obstacles) {
+          if (obstacle.markedForDeletion) continue;
+          if (obstacle.lane === this.player.lane && obstacle.z < this.hitZ && obstacle.z > -20) {
+            const safe = (obstacle.type === "crate" && this.player.isJumping) ||
+              (obstacle.type === "barrier" && this.player.isRolling);
+            if (!safe) {
+              const impact = Projection.project(this.laneX[obstacle.lane], obstacle.z, 40);
+              this.createImpact(impact.x, impact.y);
+              this.flashTime = 0.3;
+              this.shakeTime = 0.4;
+              this.gameOver();
+              break;
+            }
+          }
+        }
+
+        this.obstacles = this.obstacles.filter((o) => !o.markedForDeletion);
+        this.coins = this.coins.filter((c) => !c.markedForDeletion);
+        this.particles = this.particles.filter((p) => !p.markedForDeletion);
+
+        this.updateUI();
+      }
+
+      renderRoad(ctx) {
+        const farZ = 1400;
+        const nearLeft = Projection.project(-this.roadHalfWidth, 0);
+        const nearRight = Projection.project(this.roadHalfWidth, 0);
+        const farLeft = Projection.project(-this.roadHalfWidth, farZ);
+        const farRight = Projection.project(this.roadHalfWidth, farZ);
+
+        ctx.fillStyle = "#1a1f35";
+        ctx.beginPath();
+        ctx.moveTo(nearLeft.x, nearLeft.y);
+        ctx.lineTo(nearRight.x, nearRight.y);
+        ctx.lineTo(farRight.x, farRight.y);
+        ctx.lineTo(farLeft.x, farLeft.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(80, 140, 220, 0.4)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(nearLeft.x, nearLeft.y);
+        ctx.lineTo(farLeft.x, farLeft.y);
+        ctx.moveTo(nearRight.x, nearRight.y);
+        ctx.lineTo(farRight.x, farRight.y);
+        ctx.stroke();
+
+        const dividerX = [-70, 70];
+        for (let z = 120; z < 1500; z += 120) {
+          for (const x of dividerX) {
+            const p1 = Projection.project(x, z);
+            const p2 = Projection.project(x, z + 80);
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+            ctx.lineWidth = 3 * p1.scale;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      renderBackground(ctx) {
+        const sky = ctx.createLinearGradient(0, 0, 0, this.height);
+        sky.addColorStop(0, "#0b1223");
+        sky.addColorStop(0.55, "#17254a");
+        sky.addColorStop(1, "#0c111d");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, this.width, this.height);
+
+        ctx.fillStyle = "#11172a";
+        for (const building of this.skyline) {
+          const y = this.horizon - building.h;
+          ctx.fillRect(building.x, y, building.w, building.h);
+          ctx.fillStyle = "rgba(80, 160, 255, 0.12)";
+          ctx.fillRect(building.x + 6, y + 10, building.w - 12, 6);
+          ctx.fillStyle = "#11172a";
+        }
+
+        ctx.fillStyle = "#0a0f1f";
+        ctx.fillRect(0, this.horizon, this.width, this.height - this.horizon);
+      }
+
+      render() {
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.width, this.height);
+
+        const isShaking = this.shakeTime > 0;
+        if (isShaking) {
+          const magnitude = 6;
+          ctx.save();
+          ctx.translate(
+            (Math.random() - 0.5) * magnitude,
+            (Math.random() - 0.5) * magnitude
+          );
+        }
+
+        this.renderBackground(ctx);
+        this.renderRoad(ctx);
+
+        this.streaks.forEach((s) => s.render(ctx, this));
+
+        const renderables = [...this.coins, ...this.obstacles];
+        renderables.sort((a, b) => b.z - a.z);
+        renderables.forEach((obj) => obj.render(ctx, this));
+
+        this.player.render(ctx, this);
+        this.particles.forEach((p) => p.render(ctx, this));
+
+        if (this.flashTime > 0) {
+          ctx.fillStyle = `rgba(255, 90, 90, ${this.flashTime})`;
+          ctx.fillRect(0, 0, this.width, this.height);
+        }
+
+        if (isShaking) {
+          ctx.restore();
+        }
+      }
+
+      loop(timestamp) {
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+        this.update(dt);
+        this.render();
+        this.input.endFrame();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+    }
+
+    /**
+     * 5. INITIALIZATION
+     */
+    window.addEventListener("load", () => {
+      const canvas = document.getElementById("gameCanvas");
+      new Game(canvas);
+    });
+  </script>
+</body>
+</html>

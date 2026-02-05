@@ -18,11 +18,12 @@ export async function getGame(slug: string): Promise<GameRecord> {
   return parseResponse<GameRecord>(response);
 }
 
-export async function createGame(title: string): Promise<GameRecord> {
+export async function createGame(title?: string): Promise<GameRecord> {
+  const payload = title && title.trim().length > 0 ? { title } : {};
   const response = await fetch('/api/games', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title })
+    body: JSON.stringify(payload)
   });
 
   return parseResponse<GameRecord>(response);

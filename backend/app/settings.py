@@ -10,9 +10,9 @@ class Settings:
     project_root: Path
     games_dir: Path
     codex_bin: str
-    skill_phaser_path: Path
-    skill_playwright_path: Path
-    forbidden_path: Path
+    codex_model: str | None
+    title_model: str
+    image_model: str
 
 
 def load_settings() -> Settings:
@@ -23,19 +23,7 @@ def load_settings() -> Settings:
         project_root=project_root,
         games_dir=games_dir,
         codex_bin=os.getenv("CODEX_BIN", "codex"),
-        skill_phaser_path=Path(
-            os.getenv(
-                "SKILL_PHASER_PATH",
-                project_root / "phaser-gamedev" / "SKILL.md",
-            )
-        ).resolve(),
-        skill_playwright_path=Path(
-            os.getenv(
-                "SKILL_PLAYWRIGHT_PATH",
-                project_root / "playwright-testing" / "SKILL.md",
-            )
-        ).resolve(),
-        forbidden_path=Path(
-            os.getenv("FORBIDDEN_PATH", project_root / "games-inspo")
-        ).resolve(),
+        codex_model=(os.getenv("CODEX_MODEL") or None),
+        title_model=os.getenv("TITLE_MODEL", "gpt-4o-mini"),
+        image_model=os.getenv("IMAGE_MODEL", "gpt-image-1"),
     )

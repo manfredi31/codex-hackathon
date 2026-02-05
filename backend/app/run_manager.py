@@ -7,10 +7,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from .models import ChatMessage, RunStatus
-from .prompting import build_codex_prompt
+from .prompting import build_game_prompt, generate_card_image, generate_title
 from .storage import GameNotFoundError, GameStorage
 
 
@@ -51,23 +51,27 @@ class RunManager:
         storage: GameStorage,
         project_root: Path,
         codex_bin: str,
-        skill_phaser_path: Path,
-        skill_playwright_path: Path,
-        forbidden_path: Path,
+        codex_model: str | None,
+        title_model: str,
+        image_model: str,
     ) -> None:
         self.storage = storage
         self.project_root = project_root
         self.codex_bin = codex_bin
-        self.skill_phaser_path = skill_phaser_path
-        self.skill_playwright_path = skill_playwright_path
-        self.forbidden_path = forbidden_path
+        self.codex_model = codex_model
+        self.title_model = title_model
+        self.image_model = image_model
 
         self._runs: dict[str, RunState] = {}
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
-        self._lock = asyncio.Lock()
-        self._worker_task: asyncio.Task | None = None
+        self._queue: Optional[asyncio.Queue[str]] = None
+        self._lock: Optional[asyncio.Lock] = None
+        self._worker_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
+        if self._queue is None:
+            self._queue = asyncio.Queue()
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         if self._worker_task and not self._worker_task.done():
             return
         self._worker_task = asyncio.create_task(self._worker_loop())
@@ -99,6 +103,9 @@ class RunManager:
             created_at=datetime.now(timezone.utc),
         )
 
+        if self._lock is None or self._queue is None:
+            raise RuntimeError("RunManager must be started before enqueue")
+
         async with self._lock:
             self._runs[run.run_id] = run
             await self._queue.put(run.run_id)
@@ -120,8 +127,9 @@ class RunManager:
 
         run.cancelled = True
 
-        if run.status == RunStatus.running and run.process:
-            run.process.terminate()
+        if run.status == RunStatus.running:
+            if run.process:
+                run.process.terminate()
             await self._emit(run, "status", {"status": "cancelling"})
             return run
 
@@ -138,6 +146,9 @@ class RunManager:
             },
         )
 
+        if self._lock is None:
+            raise RuntimeError("RunManager lock is not initialized")
+
         async with self._lock:
             self._refresh_queue_positions_locked()
 
@@ -145,6 +156,9 @@ class RunManager:
 
     async def _worker_loop(self) -> None:
         while True:
+            if self._queue is None or self._lock is None:
+                raise RuntimeError("RunManager queue is not initialized")
+
             run_id = await self._queue.get()
             run = self._runs.get(run_id)
             if not run:
@@ -173,37 +187,15 @@ class RunManager:
         run.queue_position = None
         await self._emit(run, "status", {"status": RunStatus.running.value})
 
-        prompt = build_codex_prompt(
-            storage=self.storage,
-            slug=run.slug,
+        # Build prompt for the game Codex process.
+        game_prompt = build_game_prompt(
             prompt=run.prompt,
             chat_context=run.chat_context,
-            skill_phaser_path=str(self.skill_phaser_path),
-            skill_playwright_path=str(self.skill_playwright_path),
-            forbidden_path=str(self.forbidden_path),
         )
 
-        cmd = [
-            self.codex_bin,
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-            "--cd",
-            str(run_dir),
-            "--output-last-message",
-            str(last_message_path),
-            "-",
-        ]
-
+        # --- Launch primary game Codex process ---
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.project_root),
-                env={**os.environ},
-            )
+            game_proc = await self._spawn_codex(run_dir, game_prompt, last_message_path)
         except FileNotFoundError:
             run.status = RunStatus.failed
             run.error = f"Codex binary not found: {self.codex_bin}"
@@ -221,17 +213,23 @@ class RunManager:
             )
             return
 
-        run.process = process
+        run.process = game_proc
 
-        if process.stdin:
-            process.stdin.write(prompt.encode("utf-8"))
-            await process.stdin.drain()
-            process.stdin.close()
+        # --- Generate title via OpenAI API (only for untitled games) ---
+        game = self.storage.read_game(run.slug)
+        if game.title == "Untitled Game":
+            asyncio.create_task(self._generate_and_save_title(run))
 
-        stdout_task = asyncio.create_task(self._consume_stdout(run, process.stdout))
-        stderr_task = asyncio.create_task(self._consume_stderr(run, process.stderr))
+        # --- Generate card image via OpenAI Images API (only when missing) ---
+        if not game.imageUrl:
+            asyncio.create_task(self._generate_and_save_card_image(run))
 
-        return_code = await process.wait()
+        # --- Stream the game process output to the client ---
+        stdout_task = asyncio.create_task(self._consume_stdout(run, game_proc.stdout))
+        stderr_task = asyncio.create_task(self._consume_stderr(run, game_proc.stderr))
+
+        # Wait for the game process — this is what the user cares about.
+        return_code = await game_proc.wait()
         await stdout_task
         await stderr_task
 
@@ -262,6 +260,77 @@ class RunManager:
             },
         )
 
+    # ------------------------------------------------------------------
+    # Codex subprocess helpers
+    # ------------------------------------------------------------------
+
+    async def _spawn_codex(
+        self,
+        cwd: Path,
+        prompt: str,
+        last_message_path: Path | None = None,
+    ) -> asyncio.subprocess.Process:
+        """Spawn a single Codex CLI process and feed *prompt* via stdin."""
+        cmd = [
+            self.codex_bin,
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "--cd",
+            str(cwd),
+        ]
+        if last_message_path:
+            cmd.extend(["--output-last-message", str(last_message_path)])
+        cmd.append("-")
+
+        if self.codex_model:
+            cmd[2:2] = ["-m", self.codex_model]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self.project_root),
+            env={**os.environ},
+        )
+
+        if process.stdin:
+            process.stdin.write(prompt.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+
+        return process
+
+    async def _generate_and_save_title(self, run: RunState) -> None:
+        """Generate a game title via the OpenAI API and write it to game.json."""
+        try:
+            title = await generate_title(
+                prompt=run.prompt,
+                chat_context=run.chat_context,
+                model=self.title_model,
+            )
+            self.storage.update_title(run.slug, title)
+            await self._emit(run, "metadata_updated", {"task": "title"})
+        except Exception:
+            pass  # Title generation failure is non-critical.
+
+    async def _generate_and_save_card_image(self, run: RunState) -> None:
+        """Generate a card image via the OpenAI Images API and save it to the game folder."""
+        try:
+            run_dir = self.storage.game_dir(run.slug)
+            output_path = run_dir / "card.png"
+            await generate_card_image(
+                prompt=run.prompt,
+                chat_context=run.chat_context,
+                output_path=output_path,
+                model=self.image_model,
+            )
+            self.storage.touch_game(run.slug)
+            await self._emit(run, "metadata_updated", {"task": "image"})
+        except Exception:
+            pass  # Image generation failure is non-critical.
+
     async def _consume_stdout(
         self,
         run: RunState,
@@ -281,9 +350,12 @@ class RunManager:
 
             try:
                 payload = json.loads(text)
-                await self._emit(run, "codex_event", {"event": payload})
+                chunks = self._extract_assistant_text_chunks(payload)
+                for chunk in chunks:
+                    if chunk.strip():
+                        await self._emit(run, "assistant_response", {"text": chunk})
             except json.JSONDecodeError:
-                await self._emit(run, "codex_text", {"text": text})
+                return
 
     async def _consume_stderr(
         self,
@@ -302,7 +374,8 @@ class RunManager:
             if not text:
                 continue
 
-            await self._emit(run, "stderr", {"text": text})
+            if not run.error:
+                run.error = text
 
     async def _emit(self, run: RunState, event_type: str, payload: dict[str, Any]) -> None:
         event = {
@@ -321,6 +394,38 @@ class RunManager:
         event_path.parent.mkdir(parents=True, exist_ok=True)
         with event_path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(event) + "\n")
+
+    def _extract_assistant_text_chunks(self, payload: Any) -> list[str]:
+        chunks: list[str] = []
+
+        def walk(node: Any) -> None:
+            if isinstance(node, str):
+                return
+
+            if isinstance(node, dict):
+                # Common response-stream keys from Codex/Responses events.
+                if node.get("type") in {
+                    "response.output_text.delta",
+                    "response.output_text",
+                    "assistant_message",
+                    "message.delta",
+                    "message",
+                }:
+                    for key in ("delta", "text", "content", "message"):
+                        value = node.get(key)
+                        if isinstance(value, str):
+                            chunks.append(value)
+
+                for value in node.values():
+                    walk(value)
+                return
+
+            if isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(payload)
+        return chunks
 
     def _refresh_queue_positions_locked(self) -> None:
         queued_runs = sorted(

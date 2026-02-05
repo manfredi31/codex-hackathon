@@ -11,6 +11,7 @@ export interface GameRecord {
   createdAt: string;
   updatedAt: string;
   previewUrl: string;
+  imageUrl?: string | null;
 }
 
 export interface GenerateResponse {

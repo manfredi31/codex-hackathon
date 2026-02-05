@@ -13,9 +13,9 @@ uvicorn app.main:app --reload --port 8000
 
 - `GAMES_DIR`: overrides default `<repo>/games`
 - `CODEX_BIN`: overrides codex binary path (default `codex`)
-- `SKILL_PHASER_PATH`: override skill path
-- `SKILL_PLAYWRIGHT_PATH`: override skill path
-- `FORBIDDEN_PATH`: folder codex prompt forbids (default `<repo>/games-inspo`)
+- `CODEX_MODEL`: optional model name passed to `codex exec -m ...` (overrides your local codex default model)
+- `TITLE_MODEL`: OpenAI model for game title generation (default `gpt-4o-mini`)
+- `IMAGE_MODEL`: OpenAI model for card image generation (default `gpt-image-1`)
 
 ## API
 
