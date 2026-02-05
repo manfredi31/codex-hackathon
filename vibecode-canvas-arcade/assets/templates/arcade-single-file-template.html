@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arcade Template</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1c1f26;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+
+    #game-container {
+      position: relative;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      border: 3px solid #2e3544;
+    }
+
+    canvas {
+      display: block;
+      background: linear-gradient(#13203b, #1f3758 65%, #1c2a33 65%);
+    }
+
+    #ui-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      color: #f6f7fb;
+      font-weight: 700;
+      font-size: 22px;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    #start-screen,
+    #game-over-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #fff;
+      background: rgba(5, 7, 12, 0.8);
+      text-align: center;
+      pointer-events: auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 46px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    p {
+      margin: 0;
+      font-size: 18px;
+      color: #cdd2de;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 12px 28px;
+      font-size: 20px;
+      font-weight: 700;
+      border: none;
+      border-radius: 6px;
+      background: #f2c94c;
+      color: #1f222a;
+      cursor: pointer;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+    <div id="ui-layer">
+      <div class="hud">
+        <div id="score-display">SCORE: 0</div>
+        <div id="status-display">LIVES: 3</div>
+      </div>
+
+      <div id="start-screen">
+        <h1>Arcade Template</h1>
+        <p>TODO: Replace controls copy for your game.</p>
+        <button id="start-btn">PLAY</button>
+      </div>
+
+      <div id="game-over-screen" class="hidden">
+        <h1>Game Over</h1>
+        <p id="final-score">Score: 0</p>
+        <button id="restart-btn">RESTART</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 1. UTILITY CLASSES
+     */
+    class InputManager {
+      constructor() {
+        this.keys = {};
+        this.pressed = {};
+        this.down = {};
+
+        window.addEventListener("keydown", (e) => {
+          this.keys[e.code] = true;
+          if (!this.down[e.code]) {
+            this.pressed[e.code] = true;
+            this.down[e.code] = true;
+          }
+        });
+
+        window.addEventListener("keyup", (e) => {
+          this.keys[e.code] = false;
+          this.down[e.code] = false;
+          this.pressed[e.code] = false;
+        });
+      }
+
+      isDown(code) {
+        return !!this.keys[code];
+      }
+
+      isPressed(code) {
+        return !!this.pressed[code];
+      }
+
+      endFrame() {
+        for (const code in this.pressed) {
+          this.pressed[code] = false;
+        }
+      }
+    }
+
+    /**
+     * 2. BASE GAME OBJECT
+     */
+    class GameObject {
+      constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.markedForDeletion = false;
+      }
+
+      update(dt) {}
+      render(ctx) {}
+    }
+
+    /**
+     * 3. GAME ENTITIES (replace with your own)
+     */
+    class Player extends GameObject {
+      constructor() {
+        super(300, 420, 40, 40);
+        this.speed = 280;
+      }
+
+      update(dt, input) {
+        if (input.isDown("ArrowLeft") || input.isDown("KeyA")) this.x -= this.speed * dt;
+        if (input.isDown("ArrowRight") || input.isDown("KeyD")) this.x += this.speed * dt;
+        this.x = Math.max(0, Math.min(640 - this.w, this.x));
+      }
+
+      render(ctx) {
+        ctx.fillStyle = "#4fd1c5";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+      }
+    }
+
+    class Hazard extends GameObject {
+      constructor(x, speed) {
+        super(x, -26, 26, 26);
+        this.speed = speed;
+      }
+
+      update(dt) {
+        this.y += this.speed * dt;
+        if (this.y > 520) this.markedForDeletion = true;
+      }
+
+      render(ctx) {
+        ctx.fillStyle = "#ff6b6b";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+      }
+    }
+
+    class Particle extends GameObject {
+      constructor(x, y, color) {
+        super(x, y, 4, 4);
+        this.vx = (Math.random() - 0.5) * 180;
+        this.vy = (Math.random() - 0.5) * 180;
+        this.life = 1.0;
+        this.color = color;
+      }
+
+      update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt * 2;
+        if (this.life <= 0) this.markedForDeletion = true;
+      }
+
+      render(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    /**
+     * 4. GAME MANAGER
+     */
+    class Game {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.input = new InputManager();
+
+        this.ui = {
+          start: document.getElementById("start-screen"),
+          over: document.getElementById("game-over-screen"),
+          score: document.getElementById("score-display"),
+          status: document.getElementById("status-display"),
+          finalScore: document.getElementById("final-score")
+        };
+
+        document.getElementById("start-btn").addEventListener("click", () => this.start());
+        document.getElementById("restart-btn").addEventListener("click", () => this.start());
+
+        this.lastTime = 0;
+        this.isRunning = false;
+        this.reset();
+      }
+
+      reset() {
+        this.player = new Player();
+        this.hazards = [];
+        this.particles = [];
+        this.score = 0;
+        this.lives = 3;
+        this.spawnTimer = 0;
+        this.spawnInterval = 0.9;
+        this.speed = 220;
+        this.updateUI();
+      }
+
+      start() {
+        this.reset();
+        this.ui.start.classList.add("hidden");
+        this.ui.over.classList.add("hidden");
+        this.isRunning = true;
+        this.lastTime = performance.now();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      updateUI() {
+        this.ui.score.textContent = `SCORE: ${Math.floor(this.score)}`;
+        this.ui.status.textContent = `LIVES: ${this.lives}`;
+      }
+
+      spawnHazard() {
+        const x = Math.random() * (640 - 26);
+        this.hazards.push(new Hazard(x, this.speed));
+      }
+
+      collide(a, b) {
+        return (
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y
+        );
+      }
+
+      createBurst(x, y, color) {
+        for (let i = 0; i < 14; i++) this.particles.push(new Particle(x, y, color));
+      }
+
+      update(dt) {
+        if (!this.isRunning) return;
+
+        this.score += dt * 25;
+        this.speed += dt * 2.5;
+        this.player.update(dt, this.input);
+
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) {
+          this.spawnHazard();
+          this.spawnTimer = Math.max(0.35, this.spawnInterval);
+          this.spawnInterval *= 0.995;
+        }
+
+        this.hazards.forEach((h) => h.update(dt));
+        this.particles.forEach((p) => p.update(dt));
+
+        for (const hazard of this.hazards) {
+          if (!hazard.markedForDeletion && this.collide(this.player, hazard)) {
+            hazard.markedForDeletion = true;
+            this.lives -= 1;
+            this.createBurst(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2, "#ffd166");
+            if (this.lives <= 0) {
+              this.gameOver();
+              break;
+            }
+          }
+        }
+
+        this.hazards = this.hazards.filter((h) => !h.markedForDeletion);
+        this.particles = this.particles.filter((p) => !p.markedForDeletion);
+        this.input.endFrame();
+        this.updateUI();
+      }
+
+      gameOver() {
+        this.isRunning = false;
+        this.ui.finalScore.textContent = `Score: ${Math.floor(this.score)}`;
+        this.ui.over.classList.remove("hidden");
+      }
+
+      render() {
+        this.ctx.clearRect(0, 0, 640, 480);
+
+        this.ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        for (let i = 0; i < 640; i += 40) {
+          this.ctx.fillRect(i, 0, 2, 480);
+        }
+
+        this.player.render(this.ctx);
+        this.hazards.forEach((h) => h.render(this.ctx));
+        this.particles.forEach((p) => p.render(this.ctx));
+      }
+
+      loop(timestamp) {
+        if (!this.isRunning) return;
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+        this.update(dt);
+        this.render();
+        requestAnimationFrame((t) => this.loop(t));
+      }
+    }
+
+    /**
+     * 5. INITIALIZATION
+     */
+    window.onload = () => {
+      const canvas = document.getElementById("gameCanvas");
+      const game = new Game(canvas);
+      // Starts on start screen; click PLAY to begin.
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Drift</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at top, #1f2442, #0f1328 55%, #090b16);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 20px 55px rgba(0, 0, 0, 0.5);
+            border: 3px solid #2d3f73;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(180deg, #141b38 0%, #121838 58%, #0f1630 100%);
+        }
+
+        #ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 14px 16px;
+            font-size: 24px;
+            font-weight: 700;
+            text-shadow: 2px 2px 0 #000;
+            color: #f6fbff;
+        }
+
+        .hud-value {
+            color: #7ce8ff;
+        }
+
+        .screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            pointer-events: auto;
+            background: rgba(7, 10, 20, 0.78);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 48px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #80ecff;
+            text-shadow: 0 0 16px rgba(128, 236, 255, 0.4);
+        }
+
+        .subtitle {
+            margin-top: 8px;
+            margin-bottom: 26px;
+            font-size: 17px;
+            color: #d0d7ea;
+        }
+
+        .controls {
+            margin-bottom: 24px;
+            font-size: 15px;
+            color: #a8b2ce;
+            line-height: 1.6;
+        }
+
+        .key {
+            display: inline-block;
+            margin: 0 2px;
+            padding: 3px 8px;
+            border-radius: 5px;
+            background: #2a3a67;
+            border-bottom: 2px solid #19264a;
+            color: #dff6ff;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 6px;
+            padding: 12px 28px;
+            font-size: 21px;
+            font-weight: 700;
+            cursor: pointer;
+            background: linear-gradient(180deg, #82edff, #45cde8);
+            color: #14223f;
+            box-shadow: 0 6px 0 #2aa4bd;
+            transition: transform 0.08s;
+        }
+
+        .btn:active {
+            transform: translateY(6px);
+            box-shadow: none;
+        }
+
+        #game-over-screen h1 {
+            color: #ff9a8f;
+            text-shadow: 0 0 16px rgba(255, 154, 143, 0.45);
+        }
+
+        #final-score {
+            margin-bottom: 16px;
+            color: #f1f6ff;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        #best-score {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #b6c5ea;
+            font-size: 16px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+        <div id="ui-layer">
+            <div class="hud-top">
+                <div>SCORE: <span id="score-display" class="hud-value">0</span></div>
+                <div>SHIELD: <span id="shield-display" class="hud-value">100%</span></div>
+            </div>
+
+            <div id="start-screen" class="screen">
+                <h1>Neon Drift</h1>
+                <p class="subtitle">Hold the lane. Smash meteors while dashing.</p>
+                <div class="controls">
+                    Move: <span class="key">A</span><span class="key">D</span> or <span class="key">Left</span><span class="key">Right</span><br>
+                    Dash: <span class="key">Space</span> or Tap
+                </div>
+                <button class="btn" id="start-btn">Start Run</button>
+            </div>
+
+            <div id="game-over-screen" class="screen hidden">
+                <h1>Hull Breach</h1>
+                <p id="final-score">Score: 0</p>
+                <p id="best-score">Best: 0</p>
+                <button class="btn" id="restart-btn">Drift Again</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * ==========================================
+ * 1. UTILITY CLASSES
+ * ==========================================
+ */
+
+class InputManager {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.keys = {};
+        this.down = {};
+        this.pressed = {};
+        this.touchActive = false;
+        this.touchX = canvas.width / 2;
+        this.dashPressed = false;
+
+        window.addEventListener("keydown", (e) => {
+            if (["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+                e.preventDefault();
+            }
+
+            this.keys[e.code] = true;
+            if (!this.down[e.code]) {
+                this.down[e.code] = true;
+                this.pressed[e.code] = true;
+            }
+        });
+
+        window.addEventListener("keyup", (e) => {
+            this.keys[e.code] = false;
+            this.down[e.code] = false;
+            this.pressed[e.code] = false;
+        });
+
+        canvas.addEventListener("mousedown", (e) => {
+            this.touchActive = true;
+            this.touchX = this.getCanvasX(e.clientX);
+            this.dashPressed = true;
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!this.touchActive) return;
+            this.touchX = this.getCanvasX(e.clientX);
+        });
+
+        window.addEventListener("mouseup", () => {
+            this.touchActive = false;
+        });
+
+        canvas.addEventListener("touchstart", (e) => {
+            if (e.touches.length === 0) return;
+            e.preventDefault();
+            const t = e.touches[0];
+            this.touchActive = true;
+            this.touchX = this.getCanvasX(t.clientX);
+            this.dashPressed = true;
+        }, { passive: false });
+
+        canvas.addEventListener("touchmove", (e) => {
+            if (e.touches.length === 0) return;
+            e.preventDefault();
+            const t = e.touches[0];
+            this.touchX = this.getCanvasX(t.clientX);
+        }, { passive: false });
+
+        canvas.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            this.touchActive = false;
+        }, { passive: false });
+    }
+
+    getCanvasX(clientX) {
+        const rect = this.canvas.getBoundingClientRect();
+        return clientX - rect.left;
+    }
+
+    isLeftHeld() {
+        const keyHeld = !!this.keys["ArrowLeft"] || !!this.keys["KeyA"];
+        const touchHeld = this.touchActive && this.touchX < this.canvas.width * 0.45;
+        return keyHeld || touchHeld;
+    }
+
+    isRightHeld() {
+        const keyHeld = !!this.keys["ArrowRight"] || !!this.keys["KeyD"];
+        const touchHeld = this.touchActive && this.touchX > this.canvas.width * 0.55;
+        return keyHeld || touchHeld;
+    }
+
+    isDashPressed() {
+        return !!this.pressed["Space"] || this.dashPressed;
+    }
+
+    isStartPressed() {
+        return !!this.pressed["Enter"] || this.isDashPressed();
+    }
+
+    endFrame() {
+        for (const code in this.pressed) {
+            this.pressed[code] = false;
+        }
+        this.dashPressed = false;
+    }
+}
+
+/**
+ * ==========================================
+ * 2. BASE GAME OBJECT CLASS
+ * ==========================================
+ */
+class GameObject {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.markedForDeletion = false;
+    }
+
+    update(dt) {}
+    render(ctx) {}
+
+    getBounds() {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height
+        };
+    }
+}
+
+/**
+ * ==========================================
+ * 3. GAME ENTITIES
+ * ==========================================
+ */
+class Background extends GameObject {
+    constructor(width, height) {
+        super(0, 0, width, height);
+        this.stars = [];
+        this.gridOffset = 0;
+
+        for (let i = 0; i < 70; i++) {
+            this.stars.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                speed: 40 + Math.random() * 160,
+                size: 1 + Math.random() * 2.4,
+                alpha: 0.3 + Math.random() * 0.7
+            });
+        }
+    }
+
+    update(dt, driftSpeed) {
+        const speedScale = 0.45 + driftSpeed / 420;
+        for (const star of this.stars) {
+            star.y += star.speed * speedScale * dt;
+            if (star.y > this.height + 4) {
+                star.y = -4;
+                star.x = Math.random() * this.width;
+            }
+        }
+        this.gridOffset = (this.gridOffset + driftSpeed * dt * 0.24) % 44;
+    }
+
+    render(ctx) {
+        const grad = ctx.createLinearGradient(0, 0, 0, this.height);
+        grad.addColorStop(0, "#121a36");
+        grad.addColorStop(0.56, "#101633");
+        grad.addColorStop(1, "#0c1128");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, this.width, this.height);
+
+        for (const star of this.stars) {
+            ctx.fillStyle = `rgba(178, 230, 255, ${star.alpha})`;
+            ctx.fillRect(star.x, star.y, star.size, star.size);
+        }
+
+        const center = this.width * 0.5;
+        ctx.strokeStyle = "rgba(103, 175, 232, 0.2)";
+        ctx.lineWidth = 1;
+        for (let i = -4; i <= 4; i++) {
+            const baseX = center + i * 70;
+            ctx.beginPath();
+            ctx.moveTo(baseX, this.height);
+            ctx.lineTo(center + i * 35, this.height * 0.33);
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = "rgba(97, 164, 229, 0.28)";
+        for (let y = this.height; y > this.height * 0.34; y -= 44) {
+            ctx.fillRect(0, y - this.gridOffset, this.width, 1);
+        }
+    }
+}
+
+class Player extends GameObject {
+    constructor(canvasWidth) {
+        super(canvasWidth / 2 - 22, 380, 44, 58);
+        this.canvasWidth = canvasWidth;
+        this.baseSpeed = 270;
+        this.dashSpeed = 680;
+        this.dashDuration = 0.14;
+        this.dashCooldownDuration = 1.1;
+        this.dashTimer = 0;
+        this.dashCooldown = 0;
+        this.hitFlash = 0;
+    }
+
+    update(dt, input) {
+        let dir = 0;
+        if (input.isLeftHeld()) dir -= 1;
+        if (input.isRightHeld()) dir += 1;
+
+        if (input.isDashPressed() && this.dashCooldown <= 0) {
+            this.dashTimer = this.dashDuration;
+            this.dashCooldown = this.dashCooldownDuration;
+        }
+
+        if (this.dashTimer > 0) this.dashTimer -= dt;
+        if (this.dashCooldown > 0) this.dashCooldown -= dt;
+        if (this.hitFlash > 0) this.hitFlash -= dt;
+
+        const speed = this.dashTimer > 0 ? this.dashSpeed : this.baseSpeed;
+        this.x += dir * speed * dt;
+        this.x = Math.max(12, Math.min(this.canvasWidth - this.width - 12, this.x));
+    }
+
+    isDashing() {
+        return this.dashTimer > 0;
+    }
+
+    triggerHitFlash() {
+        this.hitFlash = 0.18;
+    }
+
+    render(ctx) {
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+
+        ctx.fillStyle = "rgba(15, 24, 48, 0.55)";
+        ctx.beginPath();
+        ctx.ellipse(cx, this.y + this.height + 9, 20, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (this.isDashing()) {
+            ctx.fillStyle = "rgba(118, 236, 255, 0.26)";
+            ctx.fillRect(this.x - 8, this.y + 10, this.width + 16, this.height - 8);
+        }
+
+        const bodyColor = this.hitFlash > 0 ? "#ffb6ad" : "#76ecff";
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.moveTo(cx, this.y);
+        ctx.lineTo(this.x + this.width - 3, this.y + this.height - 8);
+        ctx.lineTo(this.x + 3, this.y + this.height - 8);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#2f4d80";
+        ctx.beginPath();
+        ctx.moveTo(cx, this.y + 8);
+        ctx.lineTo(this.x + this.width - 10, this.y + this.height - 12);
+        ctx.lineTo(this.x + 10, this.y + this.height - 12);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#e6f8ff";
+        ctx.beginPath();
+        ctx.moveTo(cx, this.y + 12);
+        ctx.lineTo(this.x + this.width - 16, this.y + this.height - 18);
+        ctx.lineTo(this.x + 16, this.y + this.height - 18);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    getBounds() {
+        return {
+            x: this.x + 8,
+            y: this.y + 8,
+            width: this.width - 16,
+            height: this.height - 14
+        };
+    }
+}
+
+class Meteor extends GameObject {
+    constructor(x, y, size, speed, spin) {
+        super(x, y, size, size);
+        this.size = size;
+        this.speed = speed;
+        this.spin = spin;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.darkness = 34 + Math.random() * 18;
+    }
+
+    update(dt, speedScale) {
+        this.y += this.speed * speedScale * dt;
+        this.rotation += this.spin * dt;
+
+        if (this.y > 560) {
+            this.markedForDeletion = true;
+        }
+    }
+
+    render(ctx) {
+        const cx = this.x + this.size / 2;
+        const cy = this.y + this.size / 2;
+        const r = this.size / 2;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(this.rotation);
+
+        ctx.beginPath();
+        ctx.moveTo(0, -r);
+        for (let i = 1; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const variance = 0.72 + Math.sin(i * 3.1) * 0.1;
+            ctx.lineTo(Math.cos(angle) * r * variance, Math.sin(angle) * r * variance);
+        }
+        ctx.closePath();
+
+        ctx.fillStyle = `hsl(24, 19%, ${this.darkness}%)`;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(255, 196, 138, 0.18)";
+        ctx.beginPath();
+        ctx.arc(-r * 0.22, -r * 0.18, r * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+class EnergyOrb extends GameObject {
+    constructor(x, y, speed) {
+        super(x, y, 24, 24);
+        this.speed = speed;
+        this.t = Math.random() * Math.PI * 2;
+    }
+
+    update(dt, speedScale) {
+        this.y += this.speed * speedScale * dt;
+        this.t += dt * 7;
+        if (this.y > 540) this.markedForDeletion = true;
+    }
+
+    render(ctx) {
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+        const pulse = 1 + Math.sin(this.t) * 0.12;
+
+        ctx.fillStyle = "rgba(94, 248, 205, 0.18)";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 15 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#5ef8cd";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 8 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "#cafbf0";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 12 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+}
+
+class Particle extends GameObject {
+    constructor(x, y, color) {
+        super(x, y, 4 + Math.random() * 3, 4 + Math.random() * 3);
+        this.vx = (Math.random() - 0.5) * 260;
+        this.vy = (Math.random() - 0.5) * 260;
+        this.life = 1;
+        this.decay = 1.8 + Math.random() * 1.6;
+        this.color = color;
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.vx *= 0.97;
+        this.vy *= 0.97;
+        this.life -= dt * this.decay;
+        if (this.life <= 0) this.markedForDeletion = true;
+    }
+
+    render(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.globalAlpha = 1;
+    }
+}
+
+/**
+ * ==========================================
+ * 4. GAME MANAGER CLASS
+ * ==========================================
+ */
+class Game {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.width = canvas.width;
+        this.height = canvas.height;
+
+        this.input = new InputManager(canvas);
+        this.background = new Background(this.width, this.height);
+
+        this.STATE = {
+            START: 0,
+            PLAYING: 1,
+            GAMEOVER: 2
+        };
+        this.currentState = this.STATE.START;
+
+        this.bestScore = Number(localStorage.getItem("neonDriftBest") || 0);
+        this.ui = {
+            score: document.getElementById("score-display"),
+            shield: document.getElementById("shield-display"),
+            startScreen: document.getElementById("start-screen"),
+            gameOverScreen: document.getElementById("game-over-screen"),
+            finalScore: document.getElementById("final-score"),
+            bestScore: document.getElementById("best-score")
+        };
+
+        document.getElementById("start-btn").addEventListener("click", () => this.beginRun());
+        document.getElementById("restart-btn").addEventListener("click", () => this.beginRun());
+
+        this.lastTime = 0;
+        this.score = 0;
+        this.shield = 100;
+        this.speedFactor = 1;
+        this.player = null;
+        this.meteors = [];
+        this.orbs = [];
+        this.particles = [];
+        this.meteorSpawnTimer = 0;
+        this.orbSpawnTimer = 0;
+        this.meteorInterval = 0.54;
+        this.orbInterval = 2.6;
+        this.loopStarted = false;
+
+        this.resetRun();
+        this.updateUI();
+
+        // Small deterministic test seam for smoke tests.
+        window.__NEON_DRIFT_TEST__ = {
+            start: () => this.beginRun(),
+            forceGameOver: () => this.triggerGameOver(),
+            getState: () => ({
+                state: this.currentState,
+                score: Math.floor(this.score),
+                shield: this.shield,
+                meteors: this.meteors.length,
+                orbs: this.orbs.length
+            })
+        };
+    }
+
+    resetRun() {
+        this.player = new Player(this.width);
+        this.score = 0;
+        this.shield = 100;
+        this.speedFactor = 1;
+        this.meteors = [];
+        this.orbs = [];
+        this.particles = [];
+        this.meteorSpawnTimer = 0.3;
+        this.orbSpawnTimer = 1.4;
+        this.meteorInterval = 0.54;
+        this.orbInterval = 2.6;
+    }
+
+    beginRun() {
+        this.resetRun();
+        this.currentState = this.STATE.PLAYING;
+        this.ui.startScreen.classList.add("hidden");
+        this.ui.gameOverScreen.classList.add("hidden");
+        this.updateUI();
+    }
+
+    startLoop() {
+        if (this.loopStarted) return;
+        this.loopStarted = true;
+        this.lastTime = performance.now();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    updateUI() {
+        this.ui.score.innerText = `${Math.floor(this.score)}`;
+        this.ui.shield.innerText = `${Math.max(0, Math.floor(this.shield))}%`;
+    }
+
+    spawnMeteor() {
+        const size = 24 + Math.random() * 42;
+        const x = 14 + Math.random() * (this.width - size - 28);
+        const y = -size - 20;
+        const speed = 170 + Math.random() * 210;
+        const spin = (Math.random() - 0.5) * 4;
+        this.meteors.push(new Meteor(x, y, size, speed, spin));
+    }
+
+    spawnOrb() {
+        const x = 30 + Math.random() * (this.width - 60);
+        const y = -40;
+        const speed = 140 + Math.random() * 120;
+        this.orbs.push(new EnergyOrb(x, y, speed));
+    }
+
+    createBurst(x, y, color, count = 12) {
+        for (let i = 0; i < count; i++) {
+            this.particles.push(new Particle(x, y, color));
+        }
+    }
+
+    intersects(a, b) {
+        return (
+            a.x < b.x + b.width &&
+            a.x + a.width > b.x &&
+            a.y < b.y + b.height &&
+            a.y + a.height > b.y
+        );
+    }
+
+    triggerGameOver() {
+        if (this.currentState === this.STATE.GAMEOVER) return;
+
+        this.currentState = this.STATE.GAMEOVER;
+        const final = Math.floor(this.score);
+        this.ui.finalScore.innerText = `Score: ${final}`;
+
+        if (final > this.bestScore) {
+            this.bestScore = final;
+            localStorage.setItem("neonDriftBest", String(this.bestScore));
+        }
+        this.ui.bestScore.innerText = `Best: ${this.bestScore}`;
+        this.ui.gameOverScreen.classList.remove("hidden");
+    }
+
+    update(dt) {
+        this.speedFactor += dt * 0.06;
+        this.background.update(dt, 300 * this.speedFactor);
+
+        if (this.currentState === this.STATE.START) {
+            this.player.update(dt, this.input);
+            this.player.y = 380 + Math.sin(performance.now() / 230) * 5;
+            if (this.input.isStartPressed()) this.beginRun();
+        } else if (this.currentState === this.STATE.PLAYING) {
+            this.score += dt * 42 * this.speedFactor;
+            this.player.update(dt, this.input);
+
+            this.meteorSpawnTimer -= dt;
+            if (this.meteorSpawnTimer <= 0) {
+                this.spawnMeteor();
+                this.meteorInterval = Math.max(0.28, this.meteorInterval * 0.997);
+                this.meteorSpawnTimer = this.meteorInterval;
+            }
+
+            this.orbSpawnTimer -= dt;
+            if (this.orbSpawnTimer <= 0) {
+                this.spawnOrb();
+                this.orbSpawnTimer = this.orbInterval + Math.random() * 0.7;
+            }
+
+            for (const meteor of this.meteors) {
+                meteor.update(dt, this.speedFactor);
+            }
+
+            for (const orb of this.orbs) {
+                orb.update(dt, this.speedFactor);
+            }
+
+            const playerBox = this.player.getBounds();
+
+            for (const meteor of this.meteors) {
+                if (meteor.markedForDeletion) continue;
+                if (!this.intersects(playerBox, meteor.getBounds())) continue;
+
+                const mx = meteor.x + meteor.size / 2;
+                const my = meteor.y + meteor.size / 2;
+
+                if (this.player.isDashing()) {
+                    meteor.markedForDeletion = true;
+                    this.score += 18;
+                    this.createBurst(mx, my, "#82edff", 14);
+                } else {
+                    meteor.markedForDeletion = true;
+                    this.shield -= 24;
+                    this.player.triggerHitFlash();
+                    this.createBurst(mx, my, "#ff9a8f", 16);
+                }
+            }
+
+            for (const orb of this.orbs) {
+                if (orb.markedForDeletion) continue;
+                if (!this.intersects(playerBox, orb.getBounds())) continue;
+
+                orb.markedForDeletion = true;
+                this.shield = Math.min(100, this.shield + 18);
+                this.score += 8;
+                this.createBurst(orb.x + 12, orb.y + 12, "#5ef8cd", 10);
+            }
+
+            if (this.shield <= 0) this.triggerGameOver();
+        } else if (this.currentState === this.STATE.GAMEOVER) {
+            if (this.input.isStartPressed()) this.beginRun();
+        }
+
+        for (const p of this.particles) p.update(dt);
+
+        this.meteors = this.meteors.filter((m) => !m.markedForDeletion);
+        this.orbs = this.orbs.filter((o) => !o.markedForDeletion);
+        this.particles = this.particles.filter((p) => !p.markedForDeletion);
+        this.updateUI();
+        this.input.endFrame();
+    }
+
+    render() {
+        this.ctx.clearRect(0, 0, this.width, this.height);
+        this.background.render(this.ctx);
+
+        this.orbs.sort((a, b) => a.y - b.y);
+        this.meteors.sort((a, b) => a.y - b.y);
+
+        for (const orb of this.orbs) orb.render(this.ctx);
+        for (const meteor of this.meteors) meteor.render(this.ctx);
+
+        this.player.render(this.ctx);
+        for (const p of this.particles) p.render(this.ctx);
+
+        if (this.currentState === this.STATE.GAMEOVER && this.particles.length > 10) {
+            this.ctx.fillStyle = "rgba(255, 130, 120, 0.1)";
+            this.ctx.fillRect(0, 0, this.width, this.height);
+        }
+    }
+
+    loop(timestamp) {
+        const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp;
+        this.update(dt);
+        this.render();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+}
+
+/**
+ * ==========================================
+ * 5. INITIALIZATION
+ * ==========================================
+ */
+window.onload = () => {
+    const canvas = document.getElementById("gameCanvas");
+    const game = new Game(canvas);
+    game.startLoop();
+};
+</script>
+</body>
+</html>
