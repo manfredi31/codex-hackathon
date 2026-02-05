@@ -1,0 +1,2093 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Block Realm Survival</title>
+    <style>
+      :root {
+        --bg0: #0f1520;
+        --bg1: #2a3e63;
+        --hud: rgba(10, 15, 25, 0.78);
+        --line: rgba(210, 223, 240, 0.24);
+        --text: #f1f6ff;
+        --accent: #d4e7ff;
+        --danger: #ff9284;
+        --ok: #8ed2a4;
+        --warn: #ffd17a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        color: var(--text);
+        font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 16% 18%, rgba(123, 148, 191, 0.32), transparent 42%),
+          radial-gradient(circle at 78% 82%, rgba(96, 128, 168, 0.26), transparent 40%),
+          linear-gradient(165deg, #4e6689 0%, var(--bg1) 48%, var(--bg0) 100%);
+      }
+
+      #game-shell {
+        position: relative;
+        width: min(97vw, 1320px);
+        aspect-ratio: 16 / 9;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(220, 232, 250, 0.2);
+        box-shadow:
+          0 24px 80px rgba(0, 0, 0, 0.45),
+          inset 0 0 0 1px rgba(228, 238, 252, 0.08);
+        background: #151c2a;
+      }
+
+      #render-layer,
+      #ui-layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      #render-layer canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      #ui-layer {
+        pointer-events: none;
+      }
+
+      .hud-top {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .hud-box {
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--hud);
+        padding: 8px 10px;
+        font-size: clamp(12px, 1.35vw, 16px);
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
+      }
+
+      #status-text {
+        color: var(--accent);
+      }
+
+      .crosshair {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 24px;
+        height: 24px;
+        margin-left: -12px;
+        margin-top: -12px;
+        opacity: 0.9;
+      }
+
+      .crosshair::before,
+      .crosshair::after {
+        content: "";
+        position: absolute;
+        background: rgba(240, 246, 255, 0.95);
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+      }
+
+      .crosshair::before {
+        left: 11px;
+        top: 4px;
+        width: 2px;
+        height: 16px;
+      }
+
+      .crosshair::after {
+        left: 4px;
+        top: 11px;
+        width: 16px;
+        height: 2px;
+      }
+
+      #message {
+        position: absolute;
+        top: 74px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: min(90vw, 700px);
+        padding: 7px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(230, 238, 250, 0.24);
+        background: rgba(10, 15, 25, 0.72);
+        font-size: clamp(12px, 1.35vw, 15px);
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        opacity: 0;
+        transition: opacity 180ms ease;
+      }
+
+      #message.visible {
+        opacity: 1;
+      }
+
+      #hotbar {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: grid;
+        grid-template-columns: repeat(9, minmax(0, 1fr));
+        gap: 6px;
+        width: min(92vw, 720px);
+      }
+
+      .slot {
+        border-radius: 8px;
+        border: 1px solid rgba(223, 234, 249, 0.26);
+        background: rgba(9, 13, 21, 0.76);
+        min-height: 66px;
+        padding: 6px 7px;
+        display: grid;
+        align-content: space-between;
+        gap: 6px;
+      }
+
+      .slot.active {
+        border-color: rgba(255, 236, 166, 0.88);
+        box-shadow: inset 0 0 0 1px rgba(255, 210, 110, 0.35);
+        background: rgba(32, 24, 10, 0.72);
+      }
+
+      .slot-key {
+        font-size: 11px;
+        font-weight: 700;
+        opacity: 0.84;
+      }
+
+      .slot-name {
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: 0.96;
+      }
+
+      .slot-count {
+        justify-self: end;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      #craft-wrap {
+        position: absolute;
+        right: 12px;
+        top: 108px;
+        width: min(360px, 36vw);
+        max-height: min(64vh, 560px);
+        border-radius: 12px;
+        border: 1px solid rgba(220, 232, 251, 0.25);
+        background: rgba(8, 13, 22, 0.84);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
+        overflow: hidden;
+        pointer-events: auto;
+      }
+
+      .craft-head {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(224, 236, 252, 0.18);
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        font-size: 13px;
+      }
+
+      #craft-list {
+        max-height: min(56vh, 500px);
+        overflow: auto;
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .recipe {
+        border-radius: 10px;
+        border: 1px solid rgba(219, 231, 249, 0.2);
+        background: rgba(13, 20, 33, 0.8);
+        padding: 9px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .recipe .title {
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .recipe .req {
+        font-size: 12px;
+        opacity: 0.88;
+      }
+
+      .recipe button {
+        justify-self: start;
+        border: 0;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #d7e3f9, #a9bfdf);
+        color: #172238;
+        cursor: pointer;
+      }
+
+      .recipe button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      #start-screen,
+      #game-over-screen,
+      #unsupported-screen,
+      #pause-screen {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 28px;
+        background: linear-gradient(180deg, rgba(8, 12, 20, 0.79), rgba(7, 11, 18, 0.9));
+        pointer-events: auto;
+      }
+
+      #pause-screen {
+        background: linear-gradient(180deg, rgba(8, 12, 20, 0.64), rgba(7, 11, 18, 0.77));
+      }
+
+      .panel {
+        width: min(100%, 720px);
+        display: grid;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5.5vw, 3.6rem);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      p {
+        margin: 0;
+        color: #d7e3f6;
+        line-height: 1.42;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 7px;
+      }
+
+      .pill {
+        border-radius: 999px;
+        border: 1px solid rgba(223, 233, 248, 0.25);
+        background: rgba(255, 255, 255, 0.08);
+        padding: 4px 9px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      button.main {
+        justify-self: center;
+        margin-top: 10px;
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 26px;
+        font-size: 0.95rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #d4e6ff 0%, #9cb7dc 100%);
+        color: #18253a;
+        cursor: pointer;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+      }
+
+      .small-note {
+        font-size: 12px;
+        opacity: 0.78;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 980px) {
+        .hud-top {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        #craft-wrap {
+          width: min(96vw, 390px);
+          right: 50%;
+          transform: translateX(50%);
+          top: auto;
+          bottom: 96px;
+          max-height: min(50vh, 420px);
+        }
+      }
+
+      @media (max-width: 720px) {
+        #game-shell {
+          width: 100vw;
+          height: 100vh;
+          aspect-ratio: auto;
+          border-radius: 0;
+          border: 0;
+        }
+
+        .hud-top {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        #message {
+          top: 116px;
+          max-width: 95vw;
+        }
+
+        #hotbar {
+          width: 98vw;
+          gap: 4px;
+        }
+
+        .slot {
+          min-height: 58px;
+          padding: 4px 5px;
+        }
+
+        .slot-name {
+          font-size: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-shell">
+      <div id="render-layer"></div>
+
+      <div id="ui-layer">
+        <div class="hud-top">
+          <div class="hud-box" id="health-text">HEALTH 100</div>
+          <div class="hud-box" id="hunger-text">HUNGER 100</div>
+          <div class="hud-box" id="day-text">DAY 1 - MORNING</div>
+          <div class="hud-box" id="score-text">SCORE 0</div>
+          <div class="hud-box" id="status-text">STATUS SAFE</div>
+        </div>
+
+        <div id="message"></div>
+        <div class="crosshair"></div>
+
+        <div id="hotbar"></div>
+
+        <div id="craft-wrap" class="hidden">
+          <div class="craft-head">CRAFTING (C TO TOGGLE)</div>
+          <div id="craft-list"></div>
+        </div>
+
+        <div id="start-screen">
+          <div class="panel">
+            <h1>Block Realm Survival</h1>
+            <p>
+              A detailed voxel survival clone inspired by Minecraft for browser single-player play: mine, place,
+              craft tools, survive night raids, and forge the Beacon Core objective.
+            </p>
+            <div class="controls">
+              <span class="pill">WASD Move</span>
+              <span class="pill">Mouse Look</span>
+              <span class="pill">Left Hold Mine / Attack</span>
+              <span class="pill">Right Click Place</span>
+              <span class="pill">Space Jump</span>
+              <span class="pill">Shift Sprint</span>
+              <span class="pill">1-9 Hotbar</span>
+              <span class="pill">C Crafting</span>
+              <span class="pill">Esc Pause</span>
+            </div>
+            <button class="main" id="start-btn" type="button">Enter World</button>
+            <p class="small-note">
+              Uses pointer lock for first-person control after start.
+            </p>
+          </div>
+        </div>
+
+        <div id="pause-screen" class="hidden">
+          <div class="panel">
+            <h1>Paused</h1>
+            <p>Click resume to continue and recapture mouse look.</p>
+            <button class="main" id="resume-btn" type="button">Resume</button>
+          </div>
+        </div>
+
+        <div id="game-over-screen" class="hidden">
+          <div class="panel">
+            <h1 id="game-over-title">Game Over</h1>
+            <p id="final-score">Score 0</p>
+            <p id="final-detail"></p>
+            <button class="main" id="restart-btn" type="button">Generate New World</button>
+          </div>
+        </div>
+
+        <div id="unsupported-screen" class="hidden">
+          <div class="panel">
+            <h1>WebGL Unavailable</h1>
+            <p>This browser could not initialize WebGL. Enable GPU acceleration or use a modern browser.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
+
+      /**
+       * 1. UTILITIES / INPUT / HELPERS
+       */
+      class InputManager {
+        constructor(root) {
+          this.root = root;
+          this.down = {};
+          this.pressed = {};
+          this.mouseDown = { 0: false, 1: false, 2: false };
+          this.mousePressed = { 0: false, 1: false, 2: false };
+          this.pointerLocked = false;
+          this.deltaX = 0;
+          this.deltaY = 0;
+          this.wheelDelta = 0;
+
+          window.addEventListener("keydown", (event) => {
+            if (!this.down[event.code]) this.pressed[event.code] = true;
+            this.down[event.code] = true;
+          });
+
+          window.addEventListener("keyup", (event) => {
+            this.down[event.code] = false;
+            this.pressed[event.code] = false;
+          });
+
+          root.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+            if (!this.pointerLocked) return;
+            if (!this.mouseDown[event.button]) this.mousePressed[event.button] = true;
+            this.mouseDown[event.button] = true;
+          });
+
+          window.addEventListener("mouseup", (event) => {
+            this.mouseDown[event.button] = false;
+          });
+
+          root.addEventListener("wheel", (event) => {
+            if (!this.pointerLocked) return;
+            event.preventDefault();
+            this.wheelDelta += Math.sign(event.deltaY);
+          }, { passive: false });
+
+          root.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+          });
+
+          document.addEventListener("pointerlockchange", () => {
+            this.pointerLocked = document.pointerLockElement === root;
+            if (!this.pointerLocked) {
+              this.mouseDown[0] = false;
+              this.mouseDown[2] = false;
+            }
+          });
+
+          window.addEventListener("mousemove", (event) => {
+            if (!this.pointerLocked) return;
+            this.deltaX += event.movementX;
+            this.deltaY += event.movementY;
+          });
+        }
+
+        requestPointerLock() {
+          this.root.requestPointerLock();
+        }
+
+        isDown(code) {
+          return !!this.down[code];
+        }
+
+        isPressed(code) {
+          return !!this.pressed[code];
+        }
+
+        isMouseDown(button = 0) {
+          return !!this.mouseDown[button];
+        }
+
+        isMousePressed(button = 0) {
+          return !!this.mousePressed[button];
+        }
+
+        consumeMouseDelta() {
+          const dx = this.deltaX;
+          const dy = this.deltaY;
+          this.deltaX = 0;
+          this.deltaY = 0;
+          return { dx, dy };
+        }
+
+        consumeWheelDelta() {
+          const delta = this.wheelDelta;
+          this.wheelDelta = 0;
+          return delta;
+        }
+
+        endFrame() {
+          for (const key in this.pressed) this.pressed[key] = false;
+          this.mousePressed[0] = false;
+          this.mousePressed[1] = false;
+          this.mousePressed[2] = false;
+        }
+      }
+
+      class RNG {
+        constructor(seed = 1234567) {
+          this.seed = seed >>> 0;
+        }
+
+        next() {
+          this.seed = (1664525 * this.seed + 1013904223) >>> 0;
+          return this.seed / 0x100000000;
+        }
+
+        range(min, max) {
+          return min + (max - min) * this.next();
+        }
+
+        int(min, max) {
+          return Math.floor(this.range(min, max + 1));
+        }
+      }
+
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+
+      const V3_UP = new THREE.Vector3(0, 1, 0);
+
+      function keyFor(x, y, z) {
+        return `${x},${y},${z}`;
+      }
+
+      function parseKey(k) {
+        const [x, y, z] = k.split(",").map((n) => Number(n));
+        return { x, y, z };
+      }
+
+      function boxIntersects(aMin, aMax, bMin, bMax) {
+        return (
+          aMin.x < bMax.x &&
+          aMax.x > bMin.x &&
+          aMin.y < bMax.y &&
+          aMax.y > bMin.y &&
+          aMin.z < bMax.z &&
+          aMax.z > bMin.z
+        );
+      }
+
+      function disposeMeshTree(node) {
+        if (!node) return;
+        node.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+          else if (child.material) child.material.dispose();
+        });
+      }
+
+      /**
+       * 2. BASE ENTITY CLASS
+       */
+      class Entity {
+        constructor(mesh) {
+          this.mesh = mesh;
+          this.markedForDeletion = false;
+        }
+
+        update(_dt, _game) {}
+
+        destroy() {
+          if (this.mesh) disposeMeshTree(this.mesh);
+        }
+      }
+
+      /**
+       * 3. GAME ENTITIES
+       */
+      class Player extends Entity {
+        constructor() {
+          super(new THREE.Group());
+
+          this.position = new THREE.Vector3(0, 8, 0);
+          this.velocity = new THREE.Vector3();
+          this.height = 1.8;
+          this.radius = 0.33;
+          this.walkSpeed = 4.8;
+          this.sprintSpeed = 7.2;
+          this.jumpSpeed = 8.4;
+          this.gravity = 26;
+          this.onGround = false;
+
+          this.yaw = Math.PI;
+          this.pitch = 0;
+          this.lookSensitivity = 0.0024;
+
+          this.health = 100;
+          this.hunger = 100;
+          this.maxHealth = 100;
+          this.maxHunger = 100;
+
+          this.mineProgress = 0;
+          this.mineTargetKey = "";
+          this.mineCooldown = 0;
+          this.attackCooldown = 0;
+          this.regenCooldown = 0;
+        }
+
+        eyePosition(target = new THREE.Vector3()) {
+          target.copy(this.position);
+          target.y += this.height * 0.92;
+          return target;
+        }
+
+        getAABB(pos = this.position, outMin = new THREE.Vector3(), outMax = new THREE.Vector3()) {
+          outMin.set(pos.x - this.radius, pos.y, pos.z - this.radius);
+          outMax.set(pos.x + this.radius, pos.y + this.height, pos.z + this.radius);
+          return { min: outMin, max: outMax };
+        }
+
+        processLook(input) {
+          const { dx, dy } = input.consumeMouseDelta();
+          this.yaw -= dx * this.lookSensitivity;
+          this.pitch -= dy * this.lookSensitivity;
+          this.pitch = clamp(this.pitch, -Math.PI * 0.48, Math.PI * 0.48);
+        }
+
+        applyMovement(dt, game) {
+          const input = game.input;
+
+          const fwd = (input.isDown("KeyW") || input.isDown("ArrowUp") ? 1 : 0) -
+            (input.isDown("KeyS") || input.isDown("ArrowDown") ? 1 : 0);
+          const right = (input.isDown("KeyD") || input.isDown("ArrowRight") ? 1 : 0) -
+            (input.isDown("KeyA") || input.isDown("ArrowLeft") ? 1 : 0);
+
+          const move = new THREE.Vector3();
+          if (fwd || right) {
+            const cos = Math.cos(this.yaw);
+            const sin = Math.sin(this.yaw);
+            move.x = -sin * fwd + cos * right;
+            move.z = -cos * fwd - sin * right;
+            move.normalize();
+          }
+
+          const speed = input.isDown("ShiftLeft") || input.isDown("ShiftRight") ? this.sprintSpeed : this.walkSpeed;
+          this.velocity.x = move.x * speed;
+          this.velocity.z = move.z * speed;
+
+          if (this.onGround && input.isPressed("Space")) {
+            this.velocity.y = this.jumpSpeed;
+            this.onGround = false;
+          }
+
+          this.velocity.y -= this.gravity * dt;
+          this.velocity.y = Math.max(this.velocity.y, -28);
+
+          const next = this.position.clone();
+          next.x += this.velocity.x * dt;
+          this.resolveAxis(next, "x", game.world);
+          next.z += this.velocity.z * dt;
+          this.resolveAxis(next, "z", game.world);
+          next.y += this.velocity.y * dt;
+          this.onGround = false;
+          this.resolveAxis(next, "y", game.world);
+
+          if (next.y < -30) {
+            this.position.set(0, 12, 0);
+            this.velocity.set(0, 0, 0);
+            this.takeDamage(24, game, "fell from a high place");
+          } else {
+            this.position.copy(next);
+          }
+
+          this.mesh.position.copy(this.position);
+        }
+
+        resolveAxis(nextPos, axis, world) {
+          const testMin = new THREE.Vector3();
+          const testMax = new THREE.Vector3();
+          this.getAABB(nextPos, testMin, testMax);
+
+          const x0 = Math.floor(testMin.x) - 1;
+          const x1 = Math.floor(testMax.x) + 1;
+          const y0 = Math.floor(testMin.y) - 1;
+          const y1 = Math.floor(testMax.y) + 1;
+          const z0 = Math.floor(testMin.z) - 1;
+          const z1 = Math.floor(testMax.z) + 1;
+
+          for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+              for (let z = z0; z <= z1; z++) {
+                if (!world.isSolid(x, y, z)) continue;
+                const bMin = new THREE.Vector3(x, y, z);
+                const bMax = new THREE.Vector3(x + 1, y + 1, z + 1);
+                if (!boxIntersects(testMin, testMax, bMin, bMax)) continue;
+
+                if (axis === "x") {
+                  if (this.velocity.x > 0) {
+                    nextPos.x = x - this.radius - 0.0001;
+                  } else if (this.velocity.x < 0) {
+                    nextPos.x = x + 1 + this.radius + 0.0001;
+                  }
+                  this.velocity.x = 0;
+                } else if (axis === "z") {
+                  if (this.velocity.z > 0) {
+                    nextPos.z = z - this.radius - 0.0001;
+                  } else if (this.velocity.z < 0) {
+                    nextPos.z = z + 1 + this.radius + 0.0001;
+                  }
+                  this.velocity.z = 0;
+                } else if (axis === "y") {
+                  if (this.velocity.y > 0) {
+                    nextPos.y = y - this.height - 0.0001;
+                  } else if (this.velocity.y < 0) {
+                    nextPos.y = y + 1 + 0.0001;
+                    this.onGround = true;
+                  }
+                  this.velocity.y = 0;
+                }
+
+                this.getAABB(nextPos, testMin, testMax);
+              }
+            }
+          }
+        }
+
+        updateVitals(dt, game) {
+          const drain = (this.velocity.lengthSq() > 38 ? 1.8 : 1.1) * dt;
+          this.hunger = clamp(this.hunger - drain, 0, this.maxHunger);
+
+          this.regenCooldown += dt;
+          if (this.hunger <= 0) {
+            if (this.regenCooldown >= 1.5) {
+              this.regenCooldown = 0;
+              this.takeDamage(2, game, "starvation");
+            }
+          } else if (this.hunger > 45 && this.health < this.maxHealth) {
+            if (this.regenCooldown >= 1.1) {
+              this.regenCooldown = 0;
+              this.health = clamp(this.health + 2, 0, this.maxHealth);
+            }
+          }
+        }
+
+        getToolMultiplier(blockType, inventory) {
+          const hasStonePick = inventory.items.stone_pickaxe > 0;
+          const hasStoneAxe = inventory.items.stone_axe > 0;
+
+          if ((blockType === "stone" || blockType === "coal") && hasStonePick) return 2.4;
+          if ((blockType === "wood" || blockType === "leaf") && hasStoneAxe) return 2.2;
+          if (blockType === "dirt" || blockType === "grass") return 1.3;
+          return 1;
+        }
+
+        processMining(dt, game) {
+          if (this.mineCooldown > 0) this.mineCooldown -= dt;
+          if (this.attackCooldown > 0) this.attackCooldown -= dt;
+
+          const target = game.targetInfo;
+          if (!target) {
+            this.mineProgress = 0;
+            this.mineTargetKey = "";
+            return;
+          }
+
+          if (!game.input.isMouseDown(0)) {
+            this.mineProgress = 0;
+            this.mineTargetKey = "";
+            return;
+          }
+
+          if (this.mineCooldown > 0) return;
+
+          if (target.kind === "enemy") {
+            if (this.attackCooldown > 0) return;
+            this.attackCooldown = 0.36;
+            target.enemy.takeDamage(8, game);
+            game.cameraKick(0.08, 0.09);
+            return;
+          }
+
+          if (target.kind !== "block") return;
+
+          const blockType = game.world.getBlockType(target.coord.x, target.coord.y, target.coord.z);
+          if (!blockType || blockType === "bedrock") return;
+
+          const targetKey = keyFor(target.coord.x, target.coord.y, target.coord.z);
+          if (targetKey !== this.mineTargetKey) {
+            this.mineTargetKey = targetKey;
+            this.mineProgress = 0;
+          }
+
+          const hardness = game.world.blockHardness(blockType);
+          const toolBoost = this.getToolMultiplier(blockType, game.inventory);
+          this.mineProgress += dt * toolBoost;
+
+          if (this.mineProgress >= hardness) {
+            this.mineProgress = 0;
+            this.mineTargetKey = "";
+            this.mineCooldown = 0.12;
+            game.breakBlock(target.coord.x, target.coord.y, target.coord.z, blockType);
+          }
+        }
+
+        placeBlock(game) {
+          const target = game.targetInfo;
+          if (!target || target.kind !== "block") return;
+
+          const slot = game.inventory.hotbar[game.inventory.selectedSlot];
+          if (!slot || slot.count <= 0 || !slot.placeBlock) return;
+
+          const nx = target.coord.x + target.normal.x;
+          const ny = target.coord.y + target.normal.y;
+          const nz = target.coord.z + target.normal.z;
+
+          if (!game.world.inBounds(nx, ny, nz)) {
+            game.showMessage("Cannot place outside world bounds.", 1.2);
+            return;
+          }
+
+          if (game.world.isSolid(nx, ny, nz)) return;
+
+          const pMin = new THREE.Vector3(this.position.x - this.radius, this.position.y, this.position.z - this.radius);
+          const pMax = new THREE.Vector3(this.position.x + this.radius, this.position.y + this.height, this.position.z + this.radius);
+          const bMin = new THREE.Vector3(nx, ny, nz);
+          const bMax = new THREE.Vector3(nx + 1, ny + 1, nz + 1);
+
+          if (boxIntersects(pMin, pMax, bMin, bMax)) {
+            game.showMessage("No room to place block here.", 1.2);
+            return;
+          }
+
+          game.world.setBlock(nx, ny, nz, slot.placeBlock);
+          slot.count -= 1;
+          if (slot.count <= 0) {
+            slot.itemKey = null;
+            slot.count = 0;
+            slot.placeBlock = null;
+            slot.label = "Empty";
+          }
+
+          game.score += 2;
+          game.world.rebuildVisuals();
+          game.updateHotbar();
+        }
+
+        takeDamage(amount, game, reason = "") {
+          this.health = clamp(this.health - amount, 0, this.maxHealth);
+          game.cameraKick(0.1, 0.16);
+          game.flashDamage = 0.18;
+          if (this.health <= 0) {
+            game.endGame(false, reason || "defeated");
+          }
+        }
+
+        update(dt, game) {
+          this.processLook(game.input);
+          this.applyMovement(dt, game);
+          this.updateVitals(dt, game);
+          this.processMining(dt, game);
+        }
+      }
+
+      class Enemy extends Entity {
+        constructor(spawnPos) {
+          const group = new THREE.Group();
+
+          const body = new THREE.Mesh(
+            new THREE.BoxGeometry(0.9, 1.05, 0.55),
+            new THREE.MeshStandardMaterial({ color: 0x5f9472, roughness: 0.85, metalness: 0.02 })
+          );
+          body.position.y = 1.45;
+
+          const head = new THREE.Mesh(
+            new THREE.BoxGeometry(0.78, 0.78, 0.78),
+            new THREE.MeshStandardMaterial({ color: 0x6da583, roughness: 0.82, metalness: 0.02 })
+          );
+          head.position.y = 2.22;
+
+          const eyeGeo = new THREE.BoxGeometry(0.11, 0.11, 0.03);
+          const eyeMat = new THREE.MeshBasicMaterial({ color: 0xe2f7a9 });
+          const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+          const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+          eyeL.position.set(-0.18, 2.25, 0.40);
+          eyeR.position.set(0.18, 2.25, 0.40);
+
+          group.add(body, head, eyeL, eyeR);
+          group.position.copy(spawnPos);
+
+          super(group);
+
+          this.health = 30;
+          this.speed = 2.1;
+          this.attackTimer = 0;
+          this.wanderTimer = 0;
+          this.wanderYaw = 0;
+          this.hitFlash = 0;
+        }
+
+        takeDamage(damage, game) {
+          this.health -= damage;
+          this.hitFlash = 0.16;
+          game.showMessage("Hit enemy", 0.5);
+          if (this.health <= 0) {
+            this.markedForDeletion = true;
+            game.score += 28;
+            game.kills += 1;
+            game.spawnBurst(this.mesh.position, 0x9bd88b);
+          }
+        }
+
+        update(dt, game) {
+          this.attackTimer += dt;
+          this.wanderTimer += dt;
+          this.hitFlash = Math.max(0, this.hitFlash - dt);
+
+          const playerPos = game.player.position;
+          const toPlayer = playerPos.clone().sub(this.mesh.position);
+          const dist = Math.max(0.0001, toPlayer.length());
+          const isNight = game.getNightFactor() > 0.52;
+
+          let moveDir = new THREE.Vector3();
+          if (dist < 16 || isNight) {
+            moveDir.copy(toPlayer).multiplyScalar(1 / dist);
+          } else {
+            if (this.wanderTimer > 2.6) {
+              this.wanderTimer = 0;
+              this.wanderYaw = game.rng.range(-Math.PI, Math.PI);
+            }
+            moveDir.set(Math.cos(this.wanderYaw), 0, Math.sin(this.wanderYaw));
+          }
+
+          const step = moveDir.multiplyScalar(this.speed * dt);
+          const next = this.mesh.position.clone().add(step);
+          const footY = game.world.surfaceHeightAt(next.x, next.z);
+          next.y = footY + 0.02;
+
+          if (!game.world.isSolid(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z))) {
+            this.mesh.position.copy(next);
+          }
+
+          this.mesh.lookAt(playerPos.x, this.mesh.position.y + 0.4, playerPos.z);
+          this.mesh.rotation.x = 0;
+          this.mesh.rotation.z = 0;
+
+          if (this.hitFlash > 0) {
+            this.mesh.traverse((child) => {
+              if (child.material && child.material.color) child.material.color.offsetHSL(0, 0, 0.25 * dt);
+            });
+          }
+
+          if (dist < 1.4 && this.attackTimer > 1.1) {
+            this.attackTimer = 0;
+            game.player.takeDamage(8, game, "slain by a night stalker");
+          }
+        }
+      }
+
+      class Particle extends Entity {
+        constructor(position, color, rng) {
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.1, 0.1, 0.1),
+            new THREE.MeshBasicMaterial({ color })
+          );
+          mesh.position.copy(position);
+          super(mesh);
+
+          this.velocity = new THREE.Vector3(
+            rng.range(-2.3, 2.3),
+            rng.range(1.2, 4.4),
+            rng.range(-2.3, 2.3)
+          );
+          this.life = rng.range(0.45, 0.95);
+        }
+
+        update(dt, _game) {
+          this.life -= dt;
+          this.velocity.y -= 9.8 * dt;
+          this.mesh.position.addScaledVector(this.velocity, dt);
+          this.mesh.rotation.x += dt * 6;
+          this.mesh.rotation.y += dt * 4;
+          if (this.life <= 0) this.markedForDeletion = true;
+        }
+      }
+
+      class BlockWorld {
+        constructor(scene, rng) {
+          this.scene = scene;
+          this.rng = rng;
+
+          this.width = 56;
+          this.depth = 56;
+          this.height = 24;
+          this.originX = -Math.floor(this.width / 2);
+          this.originZ = -Math.floor(this.depth / 2);
+
+          this.blocks = new Map();
+          this.meshes = new Map();
+          this.instanceMaps = new Map();
+
+          this.blockDefs = {
+            grass: {
+              color: 0x6da352,
+              roughness: 0.95,
+              metalness: 0.02,
+              hardness: 0.43,
+              drop: "dirt",
+              score: 5
+            },
+            dirt: {
+              color: 0x7e5f3d,
+              roughness: 1,
+              metalness: 0,
+              hardness: 0.4,
+              drop: "dirt",
+              score: 4
+            },
+            stone: {
+              color: 0x7d8189,
+              roughness: 0.92,
+              metalness: 0.05,
+              hardness: 1.18,
+              drop: "cobble",
+              score: 7
+            },
+            coal: {
+              color: 0x34353a,
+              roughness: 0.88,
+              metalness: 0.08,
+              hardness: 1.08,
+              drop: "coal",
+              score: 12
+            },
+            wood: {
+              color: 0x8f6f43,
+              roughness: 0.9,
+              metalness: 0.02,
+              hardness: 0.9,
+              drop: "wood_log",
+              score: 8
+            },
+            leaf: {
+              color: 0x4f8a45,
+              roughness: 1,
+              metalness: 0,
+              hardness: 0.26,
+              drop: "leaf",
+              score: 3
+            },
+            plank: {
+              color: 0xb28e5a,
+              roughness: 0.88,
+              metalness: 0.02,
+              hardness: 0.6,
+              drop: "plank",
+              score: 6
+            },
+            beacon_core: {
+              color: 0x9fc8ff,
+              roughness: 0.14,
+              metalness: 0.48,
+              hardness: 1.5,
+              drop: "beacon_core",
+              score: 60,
+              emissive: 0x1f3f74,
+              emissiveIntensity: 0.8
+            },
+            bedrock: {
+              color: 0x23262d,
+              roughness: 1,
+              metalness: 0,
+              hardness: 999,
+              drop: null,
+              score: 0
+            }
+          };
+
+          this.sharedGeometry = new THREE.BoxGeometry(1, 1, 1);
+        }
+
+        reset() {
+          for (const mesh of this.meshes.values()) {
+            this.scene.remove(mesh);
+            mesh.geometry.dispose();
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+          this.meshes.clear();
+          this.instanceMaps.clear();
+          this.blocks.clear();
+        }
+
+        generate() {
+          this.reset();
+
+          for (let x = 0; x < this.width; x++) {
+            for (let z = 0; z < this.depth; z++) {
+              const wx = this.originX + x;
+              const wz = this.originZ + z;
+
+              const hBase = Math.sin(wx * 0.18) * 0.9 + Math.cos(wz * 0.13) * 0.8;
+              const hNoise = (this.rng.next() - 0.5) * 1.5;
+              const hill = Math.sin((wx + wz) * 0.06) * 1.2;
+              const height = clamp(Math.floor(7 + hBase + hNoise + hill), 4, 13);
+
+              this.setBlock(wx, 0, wz, "bedrock");
+              for (let y = 1; y <= height; y++) {
+                if (y === height) this.setBlock(wx, y, wz, "grass");
+                else if (y >= height - 2) this.setBlock(wx, y, wz, "dirt");
+                else {
+                  if (this.rng.next() < 0.055 && y > 4) this.setBlock(wx, y, wz, "coal");
+                  else this.setBlock(wx, y, wz, "stone");
+                }
+              }
+            }
+          }
+
+          for (let i = 0; i < 180; i++) {
+            const tx = this.rng.int(this.originX + 2, this.originX + this.width - 3);
+            const tz = this.rng.int(this.originZ + 2, this.originZ + this.depth - 3);
+            const topY = this.surfaceHeightAt(tx + 0.5, tz + 0.5);
+            if (topY < 5 || topY > 12) continue;
+            if (this.rng.next() < 0.36) this.spawnTree(tx, topY + 1, tz);
+          }
+
+          this.rebuildVisuals();
+        }
+
+        spawnTree(x, y, z) {
+          const trunk = this.rng.int(3, 5);
+          for (let i = 0; i < trunk; i++) {
+            if (!this.inBounds(x, y + i, z)) break;
+            this.setBlock(x, y + i, z, "wood");
+          }
+
+          const top = y + trunk;
+          for (let ox = -2; ox <= 2; ox++) {
+            for (let oz = -2; oz <= 2; oz++) {
+              for (let oy = -2; oy <= 1; oy++) {
+                const dist = Math.abs(ox) + Math.abs(oz) + Math.abs(oy) * 0.8;
+                if (dist > 3.8) continue;
+                const bx = x + ox;
+                const by = top + oy;
+                const bz = z + oz;
+                if (!this.inBounds(bx, by, bz)) continue;
+                if (!this.getBlockType(bx, by, bz) && this.rng.next() > 0.15) this.setBlock(bx, by, bz, "leaf");
+              }
+            }
+          }
+        }
+
+        inBounds(x, y, z) {
+          return (
+            x >= this.originX &&
+            x < this.originX + this.width &&
+            z >= this.originZ &&
+            z < this.originZ + this.depth &&
+            y >= 0 &&
+            y < this.height
+          );
+        }
+
+        setBlock(x, y, z, type) {
+          if (!this.inBounds(x, y, z)) return;
+          if (!type) {
+            this.blocks.delete(keyFor(x, y, z));
+          } else {
+            this.blocks.set(keyFor(x, y, z), type);
+          }
+        }
+
+        getBlockType(x, y, z) {
+          return this.blocks.get(keyFor(x, y, z)) || null;
+        }
+
+        isSolid(x, y, z) {
+          return this.getBlockType(x, y, z) !== null;
+        }
+
+        surfaceHeightAt(x, z) {
+          const bx = Math.floor(x);
+          const bz = Math.floor(z);
+          for (let y = this.height - 1; y >= 0; y--) {
+            if (this.isSolid(bx, y, bz)) return y + 1;
+          }
+          return 1;
+        }
+
+        blockHardness(type) {
+          const def = this.blockDefs[type];
+          if (!def) return 1;
+          return def.hardness;
+        }
+
+        getDrop(type) {
+          const def = this.blockDefs[type];
+          if (!def) return null;
+          return def.drop;
+        }
+
+        getScore(type) {
+          const def = this.blockDefs[type];
+          if (!def) return 0;
+          return def.score || 0;
+        }
+
+        isVisibleFace(x, y, z) {
+          return (
+            !this.isSolid(x + 1, y, z) ||
+            !this.isSolid(x - 1, y, z) ||
+            !this.isSolid(x, y + 1, z) ||
+            !this.isSolid(x, y - 1, z) ||
+            !this.isSolid(x, y, z + 1) ||
+            !this.isSolid(x, y, z - 1)
+          );
+        }
+
+        rebuildVisuals() {
+          for (const mesh of this.meshes.values()) {
+            this.scene.remove(mesh);
+            mesh.geometry.dispose();
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+          this.meshes.clear();
+          this.instanceMaps.clear();
+
+          const byType = new Map();
+          for (const [k, type] of this.blocks.entries()) {
+            const { x, y, z } = parseKey(k);
+            if (!this.isVisibleFace(x, y, z)) continue;
+            if (!byType.has(type)) byType.set(type, []);
+            byType.get(type).push({ x, y, z });
+          }
+
+          for (const [type, list] of byType.entries()) {
+            const def = this.blockDefs[type] || this.blockDefs.dirt;
+            const mat = new THREE.MeshStandardMaterial({
+              color: def.color,
+              roughness: def.roughness,
+              metalness: def.metalness,
+              emissive: def.emissive || 0x000000,
+              emissiveIntensity: def.emissiveIntensity || 0
+            });
+
+            const inst = new THREE.InstancedMesh(this.sharedGeometry.clone(), mat, list.length);
+            inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            inst.castShadow = false;
+            inst.receiveShadow = false;
+
+            const dummy = new THREE.Object3D();
+            const mapping = [];
+            for (let i = 0; i < list.length; i++) {
+              const c = list[i];
+              dummy.position.set(c.x + 0.5, c.y + 0.5, c.z + 0.5);
+              dummy.rotation.set(0, 0, 0);
+              dummy.scale.set(1, 1, 1);
+              dummy.updateMatrix();
+              inst.setMatrixAt(i, dummy.matrix);
+              mapping[i] = c;
+            }
+
+            inst.userData.blockType = type;
+            this.meshes.set(type, inst);
+            this.instanceMaps.set(type, mapping);
+            this.scene.add(inst);
+          }
+        }
+      }
+
+      class Inventory {
+        constructor() {
+          this.items = {
+            dirt: 0,
+            wood_log: 0,
+            leaf: 0,
+            cobble: 0,
+            coal: 0,
+            plank: 0,
+            stick: 0,
+            stone_pickaxe: 0,
+            stone_axe: 0,
+            beacon_core: 0
+          };
+
+          this.hotbar = new Array(9).fill(null).map(() => ({
+            itemKey: null,
+            label: "Empty",
+            count: 0,
+            placeBlock: null
+          }));
+          this.selectedSlot = 0;
+        }
+
+        reset() {
+          for (const k in this.items) this.items[k] = 0;
+          this.hotbar.forEach((slot) => {
+            slot.itemKey = null;
+            slot.label = "Empty";
+            slot.count = 0;
+            slot.placeBlock = null;
+          });
+          this.selectedSlot = 0;
+
+          this.addItem("dirt", 16);
+          this.addItem("wood_log", 8);
+          this.syncHotbarDefaults();
+        }
+
+        addItem(itemKey, amount = 1) {
+          if (!(itemKey in this.items)) this.items[itemKey] = 0;
+          this.items[itemKey] += amount;
+          this.syncHotbarDefaults();
+        }
+
+        consumeItems(requirements) {
+          for (const req of requirements) {
+            if ((this.items[req.item] || 0) < req.count) return false;
+          }
+          for (const req of requirements) this.items[req.item] -= req.count;
+          this.syncHotbarDefaults();
+          return true;
+        }
+
+        hasRequirements(requirements) {
+          for (const req of requirements) {
+            if ((this.items[req.item] || 0) < req.count) return false;
+          }
+          return true;
+        }
+
+        syncHotbarDefaults() {
+          const defs = [
+            { key: "dirt", label: "Dirt", placeBlock: "dirt" },
+            { key: "wood_log", label: "Log", placeBlock: "wood" },
+            { key: "plank", label: "Plank", placeBlock: "plank" },
+            { key: "cobble", label: "Cobble", placeBlock: "stone" },
+            { key: "leaf", label: "Leaf", placeBlock: "leaf" },
+            { key: "coal", label: "Coal", placeBlock: null },
+            { key: "stick", label: "Stick", placeBlock: null },
+            { key: "stone_pickaxe", label: "Pickaxe", placeBlock: null },
+            { key: "beacon_core", label: "Beacon", placeBlock: "beacon_core" }
+          ];
+
+          for (let i = 0; i < defs.length; i++) {
+            const d = defs[i];
+            this.hotbar[i].itemKey = d.key;
+            this.hotbar[i].label = d.label;
+            this.hotbar[i].count = this.items[d.key] || 0;
+            this.hotbar[i].placeBlock = d.placeBlock;
+          }
+        }
+      }
+
+      class Game {
+        constructor(root) {
+          this.root = root;
+          this.renderLayer = document.getElementById("render-layer");
+          this.state = "START";
+
+          this.input = new InputManager(root);
+          this.rng = new RNG(923847);
+
+          this.player = new Player();
+          this.inventory = new Inventory();
+          this.world = null;
+
+          this.entities = [];
+          this.enemies = [];
+          this.particles = [];
+
+          this.score = 0;
+          this.kills = 0;
+          this.time = 0;
+          this.dayLength = 210;
+          this.dayCount = 1;
+          this.enemySpawnTimer = 4;
+          this.enemySpawnInterval = 6;
+
+          this.targetInfo = null;
+          this.targetRaycaster = new THREE.Raycaster();
+          this.targetRaycaster.far = 6;
+
+          this.flashDamage = 0;
+          this.flashOverlay = null;
+
+          this.messageTimer = 0;
+
+          this.cameraShake = 0;
+          this.cameraShakeTime = 0;
+          this.hadPointerLock = false;
+
+          this.recipes = [
+            {
+              id: "planks",
+              title: "4x Planks",
+              req: [{ item: "wood_log", count: 1 }],
+              out: { item: "plank", count: 4 }
+            },
+            {
+              id: "sticks",
+              title: "4x Sticks",
+              req: [{ item: "plank", count: 2 }],
+              out: { item: "stick", count: 4 }
+            },
+            {
+              id: "stone_pickaxe",
+              title: "Stone Pickaxe",
+              req: [
+                { item: "cobble", count: 3 },
+                { item: "stick", count: 2 }
+              ],
+              out: { item: "stone_pickaxe", count: 1 }
+            },
+            {
+              id: "stone_axe",
+              title: "Stone Axe",
+              req: [
+                { item: "cobble", count: 3 },
+                { item: "stick", count: 2 }
+              ],
+              out: { item: "stone_axe", count: 1 }
+            },
+            {
+              id: "beacon_core",
+              title: "Beacon Core (Win Objective)",
+              req: [
+                { item: "cobble", count: 10 },
+                { item: "wood_log", count: 6 },
+                { item: "coal", count: 4 }
+              ],
+              out: { item: "beacon_core", count: 1 },
+              objective: true
+            }
+          ];
+
+          this.ui = {
+            health: document.getElementById("health-text"),
+            hunger: document.getElementById("hunger-text"),
+            day: document.getElementById("day-text"),
+            score: document.getElementById("score-text"),
+            status: document.getElementById("status-text"),
+            message: document.getElementById("message"),
+            hotbar: document.getElementById("hotbar"),
+            craftWrap: document.getElementById("craft-wrap"),
+            craftList: document.getElementById("craft-list"),
+            startScreen: document.getElementById("start-screen"),
+            pauseScreen: document.getElementById("pause-screen"),
+            overScreen: document.getElementById("game-over-screen"),
+            unsupportedScreen: document.getElementById("unsupported-screen"),
+            startBtn: document.getElementById("start-btn"),
+            resumeBtn: document.getElementById("resume-btn"),
+            restartBtn: document.getElementById("restart-btn"),
+            finalScore: document.getElementById("final-score"),
+            finalDetail: document.getElementById("final-detail"),
+            finalTitle: document.getElementById("game-over-title")
+          };
+
+          this.ui.startBtn.addEventListener("click", () => this.start());
+          this.ui.resumeBtn.addEventListener("click", () => this.resumeFromPause());
+          this.ui.restartBtn.addEventListener("click", () => this.start());
+
+          this.setupThree();
+          this.setupWorld();
+          this.buildCraftingUI();
+          this.buildHotbarUI();
+
+          this.handleResize();
+          window.addEventListener("resize", () => this.handleResize());
+
+          window.addEventListener("keydown", (event) => {
+            if (this.state !== "PLAYING") return;
+            if (event.code === "KeyC") {
+              this.ui.craftWrap.classList.toggle("hidden");
+            }
+            if (event.code === "Escape") {
+              this.pause();
+            }
+            const num = Number(event.key);
+            if (num >= 1 && num <= 9) {
+              this.inventory.selectedSlot = num - 1;
+              this.updateHotbar();
+            }
+          });
+
+          this.root.addEventListener("mousedown", () => {
+            if (this.state !== "PLAYING") return;
+            if (!this.input.pointerLocked) this.input.requestPointerLock();
+          });
+
+          this.root.addEventListener("mouseup", (event) => {
+            if (this.state !== "PLAYING") return;
+            if (event.button === 2 && this.input.pointerLocked) {
+              this.player.placeBlock(this);
+              this.updateHotbar();
+            }
+          });
+
+          this.render();
+
+          window.__TEST__ = {
+            ready: true,
+            state: () => ({
+              mode: this.state,
+              health: Math.round(this.player.health),
+              hunger: Math.round(this.player.hunger),
+              score: this.score,
+              day: this.dayCount,
+              enemies: this.enemies.length,
+              inventory: { ...this.inventory.items }
+            })
+          };
+        }
+
+        setupThree() {
+          const probe = document.createElement("canvas");
+          const gl = probe.getContext("webgl2") || probe.getContext("webgl");
+          if (!gl) {
+            this.ui.unsupportedScreen.classList.remove("hidden");
+            throw new Error("WebGL unavailable");
+          }
+
+          this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.03;
+          this.renderer.shadowMap.enabled = false;
+          this.renderLayer.appendChild(this.renderer.domElement);
+
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0x92b9e7);
+          this.scene.fog = new THREE.Fog(0x9dbadf, 34, 145);
+
+          this.camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.05, 260);
+          this.camera.position.set(0, 12, 10);
+
+          this.skyHemi = new THREE.HemisphereLight(0xa6d2ff, 0x26313f, 0.92);
+          this.scene.add(this.skyHemi);
+
+          this.ambient = new THREE.AmbientLight(0x617697, 0.48);
+          this.scene.add(this.ambient);
+
+          this.sun = new THREE.DirectionalLight(0xffecbe, 0.95);
+          this.sun.position.set(-16, 22, 14);
+          this.scene.add(this.sun);
+
+          this.moon = new THREE.DirectionalLight(0x8ba6df, 0.1);
+          this.moon.position.set(14, 16, -18);
+          this.scene.add(this.moon);
+
+          const skyDome = new THREE.Mesh(
+            new THREE.SphereGeometry(240, 28, 16),
+            new THREE.MeshBasicMaterial({
+              color: 0x8eb4e6,
+              side: THREE.BackSide
+            })
+          );
+          this.skyDome = skyDome;
+          this.scene.add(skyDome);
+
+          this.flashOverlay = new THREE.Mesh(
+            new THREE.PlaneGeometry(2, 2),
+            new THREE.MeshBasicMaterial({
+              color: 0xff8080,
+              transparent: true,
+              opacity: 0,
+              depthTest: false,
+              depthWrite: false
+            })
+          );
+          this.flashOverlay.position.z = -0.5;
+          this.camera.add(this.flashOverlay);
+          this.scene.add(this.camera);
+
+          this.targetOutline = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01)),
+            new THREE.LineBasicMaterial({ color: 0xf6f1bc })
+          );
+          this.targetOutline.visible = false;
+          this.scene.add(this.targetOutline);
+        }
+
+        setupWorld() {
+          this.world = new BlockWorld(this.scene, this.rng);
+          this.world.generate();
+
+          this.scene.add(this.player.mesh);
+        }
+
+        buildHotbarUI() {
+          this.ui.hotbar.innerHTML = "";
+          for (let i = 0; i < 9; i++) {
+            const div = document.createElement("div");
+            div.className = "slot";
+            div.innerHTML = `
+              <div class="slot-key">${i + 1}</div>
+              <div class="slot-name">Empty</div>
+              <div class="slot-count">0</div>
+            `;
+            this.ui.hotbar.appendChild(div);
+          }
+        }
+
+        buildCraftingUI() {
+          this.ui.craftList.innerHTML = "";
+          for (const recipe of this.recipes) {
+            const card = document.createElement("div");
+            card.className = "recipe";
+            card.dataset.recipe = recipe.id;
+
+            const reqText = recipe.req.map((r) => `${r.item} x${r.count}`).join(" + ");
+            card.innerHTML = `
+              <div class="title">${recipe.title}</div>
+              <div class="req">Requires: ${reqText}</div>
+              <button type="button">Craft</button>
+            `;
+
+            const btn = card.querySelector("button");
+            btn.addEventListener("click", () => this.craftRecipe(recipe.id));
+            this.ui.craftList.appendChild(card);
+          }
+        }
+
+        craftRecipe(recipeId) {
+          const recipe = this.recipes.find((r) => r.id === recipeId);
+          if (!recipe) return;
+
+          if (!this.inventory.hasRequirements(recipe.req)) {
+            this.showMessage("Missing resources for recipe.", 1.2);
+            return;
+          }
+
+          this.inventory.consumeItems(recipe.req);
+          this.inventory.addItem(recipe.out.item, recipe.out.count);
+          this.score += 12;
+
+          if (recipe.objective) {
+            this.showMessage("Beacon Core forged. Objective complete!", 2.3);
+            setTimeout(() => {
+              if (this.state === "PLAYING") this.endGame(true, "Beacon Core forged");
+            }, 450);
+          } else {
+            this.showMessage(`${recipe.title} crafted`, 1);
+          }
+
+          this.updateHotbar();
+          this.refreshCraftButtons();
+        }
+
+        refreshCraftButtons() {
+          const nodes = this.ui.craftList.querySelectorAll(".recipe");
+          for (const node of nodes) {
+            const recipe = this.recipes.find((r) => r.id === node.dataset.recipe);
+            const canCraft = recipe ? this.inventory.hasRequirements(recipe.req) : false;
+            const btn = node.querySelector("button");
+            btn.disabled = !canCraft;
+          }
+        }
+
+        start() {
+          this.clearDynamicEntities();
+
+          this.state = "PLAYING";
+          this.score = 0;
+          this.kills = 0;
+          this.time = 0;
+          this.dayCount = 1;
+          this.enemySpawnTimer = 4;
+          this.enemySpawnInterval = 6;
+          this.flashDamage = 0;
+          this.cameraShake = 0;
+          this.cameraShakeTime = 0;
+
+          this.inventory.reset();
+          this.world.generate();
+
+          const spawnY = this.world.surfaceHeightAt(0, 0) + 0.02;
+          this.player.position.set(0, spawnY, 0);
+          this.player.velocity.set(0, 0, 0);
+          this.player.health = 100;
+          this.player.hunger = 100;
+          this.player.onGround = false;
+          this.player.mineProgress = 0;
+          this.player.mineTargetKey = "";
+
+          this.ui.startScreen.classList.add("hidden");
+          this.ui.overScreen.classList.add("hidden");
+          this.ui.pauseScreen.classList.add("hidden");
+          this.ui.craftWrap.classList.add("hidden");
+          this.hadPointerLock = false;
+
+          this.updateHotbar();
+          this.refreshCraftButtons();
+          this.updateHud();
+          this.showMessage("World generated. Survive the night and craft the Beacon Core.", 2.2);
+
+          this.input.requestPointerLock();
+        }
+
+        pause() {
+          if (this.state !== "PLAYING") return;
+          this.state = "PAUSED";
+          this.hadPointerLock = false;
+          this.ui.pauseScreen.classList.remove("hidden");
+          if (document.pointerLockElement === this.root) document.exitPointerLock();
+        }
+
+        resumeFromPause() {
+          if (this.state !== "PAUSED") return;
+          this.state = "PLAYING";
+          this.hadPointerLock = false;
+          this.ui.pauseScreen.classList.add("hidden");
+          this.input.requestPointerLock();
+        }
+
+        endGame(win, reason) {
+          this.state = "GAMEOVER";
+          if (document.pointerLockElement === this.root) document.exitPointerLock();
+
+          this.ui.overScreen.classList.remove("hidden");
+          this.ui.craftWrap.classList.add("hidden");
+
+          this.ui.finalTitle.textContent = win ? "Objective Complete" : "You Died";
+          this.ui.finalScore.textContent = `Score ${Math.floor(this.score)} | Kills ${this.kills} | Day ${this.dayCount}`;
+          this.ui.finalDetail.textContent = win
+            ? `Victory: ${reason}. You forged the Beacon Core and completed the run.`
+            : `Cause: ${reason || "Unknown"}. Generate a fresh world and try again.`;
+        }
+
+        clearDynamicEntities() {
+          for (const e of this.entities) {
+            this.scene.remove(e.mesh);
+            e.destroy();
+          }
+          this.entities.length = 0;
+          this.enemies.length = 0;
+          this.particles.length = 0;
+        }
+
+        showMessage(text, duration = 1.2) {
+          this.ui.message.textContent = text;
+          this.ui.message.classList.add("visible");
+          this.messageTimer = duration;
+        }
+
+        getNightFactor() {
+          const t = (this.time % this.dayLength) / this.dayLength;
+          const sunCurve = Math.sin(t * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5;
+          return 1 - sunCurve;
+        }
+
+        updateLighting() {
+          const t = (this.time % this.dayLength) / this.dayLength;
+          const sunCurve = Math.sin(t * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5;
+          const night = 1 - sunCurve;
+
+          this.skyHemi.intensity = lerp(0.26, 0.95, sunCurve);
+          this.ambient.intensity = lerp(0.17, 0.52, sunCurve);
+          this.sun.intensity = lerp(0.08, 1.1, sunCurve);
+          this.moon.intensity = lerp(0.26, 0.03, sunCurve);
+
+          this.scene.fog.color.setRGB(
+            lerp(0.05, 0.58, sunCurve),
+            lerp(0.08, 0.73, sunCurve),
+            lerp(0.13, 0.91, sunCurve)
+          );
+          this.scene.background.copy(this.scene.fog.color);
+          this.skyDome.material.color.setRGB(
+            lerp(0.09, 0.56, sunCurve),
+            lerp(0.12, 0.71, sunCurve),
+            lerp(0.19, 0.9, sunCurve)
+          );
+
+          const phase = t < 0.24 || t > 0.78 ? "NIGHT" : t < 0.32 || t > 0.68 ? "DUSK" : "DAY";
+          this.ui.status.textContent = night > 0.52 ? "STATUS HOSTILE" : "STATUS SAFE";
+          this.ui.status.style.color = night > 0.52 ? "var(--danger)" : "var(--accent)";
+          this.ui.day.textContent = `DAY ${this.dayCount} - ${phase}`;
+        }
+
+        updateTargeting() {
+          const eye = this.player.eyePosition();
+          const dir = new THREE.Vector3(
+            -Math.sin(this.player.yaw) * Math.cos(this.player.pitch),
+            Math.sin(this.player.pitch),
+            -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)
+          ).normalize();
+
+          this.targetRaycaster.set(eye, dir);
+
+          let bestDist = Infinity;
+          let best = null;
+
+          for (const [type, mesh] of this.world.meshes.entries()) {
+            if (!mesh || !mesh.count) continue;
+            const hits = this.targetRaycaster.intersectObject(mesh, false);
+            if (!hits.length) continue;
+
+            const hit = hits[0];
+            if (hit.distance >= bestDist) continue;
+
+            const map = this.world.instanceMaps.get(type);
+            const coord = map ? map[hit.instanceId] : null;
+            if (!coord) continue;
+
+            const normal = hit.face ? hit.face.normal.clone().round() : new THREE.Vector3();
+            bestDist = hit.distance;
+            best = {
+              kind: "block",
+              distance: hit.distance,
+              coord,
+              normal
+            };
+          }
+
+          for (const enemy of this.enemies) {
+            const hit = this.targetRaycaster.intersectObject(enemy.mesh, true)[0];
+            if (!hit) continue;
+            if (hit.distance < bestDist) {
+              bestDist = hit.distance;
+              best = { kind: "enemy", enemy, distance: hit.distance };
+            }
+          }
+
+          this.targetInfo = best;
+
+          if (best && best.kind === "block") {
+            this.targetOutline.visible = true;
+            this.targetOutline.position.set(best.coord.x + 0.5, best.coord.y + 0.5, best.coord.z + 0.5);
+          } else {
+            this.targetOutline.visible = false;
+          }
+        }
+
+        breakBlock(x, y, z, blockType) {
+          if (blockType === "bedrock") return;
+
+          this.world.setBlock(x, y, z, null);
+          this.world.rebuildVisuals();
+
+          const drop = this.world.getDrop(blockType);
+          if (drop) {
+            this.inventory.addItem(drop, 1);
+            this.updateHotbar();
+          }
+
+          this.score += this.world.getScore(blockType);
+          this.spawnBurst(new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5), this.world.blockDefs[blockType].color);
+          this.showMessage(`${blockType} mined`, 0.5);
+          this.refreshCraftButtons();
+        }
+
+        spawnBurst(pos, color) {
+          const n = 14;
+          for (let i = 0; i < n; i++) {
+            const p = new Particle(pos, color, this.rng);
+            this.entities.push(p);
+            this.particles.push(p);
+            this.scene.add(p.mesh);
+          }
+        }
+
+        spawnEnemy() {
+          const r = this.rng.range(14, 24);
+          const a = this.rng.range(0, Math.PI * 2);
+          const x = this.player.position.x + Math.cos(a) * r;
+          const z = this.player.position.z + Math.sin(a) * r;
+
+          if (!this.world.inBounds(Math.floor(x), 1, Math.floor(z))) return;
+          const y = this.world.surfaceHeightAt(x, z);
+          const e = new Enemy(new THREE.Vector3(x, y, z));
+          this.entities.push(e);
+          this.enemies.push(e);
+          this.scene.add(e.mesh);
+        }
+
+        updateSpawns(dt) {
+          const night = this.getNightFactor() > 0.5;
+          const baseInterval = night ? 2.4 : 8.6;
+          this.enemySpawnInterval = Math.max(1.35, baseInterval - this.dayCount * 0.12);
+
+          this.enemySpawnTimer -= dt;
+          if (this.enemySpawnTimer <= 0) {
+            this.enemySpawnTimer = this.enemySpawnInterval;
+            if (this.enemies.length < 18 && (night || this.rng.next() < 0.2)) {
+              this.spawnEnemy();
+            }
+          }
+        }
+
+        updateEntities(dt) {
+          for (const entity of this.entities) {
+            entity.update(dt, this);
+          }
+
+          for (let i = this.entities.length - 1; i >= 0; i--) {
+            if (!this.entities[i].markedForDeletion) continue;
+            this.scene.remove(this.entities[i].mesh);
+            this.entities[i].destroy();
+            this.entities.splice(i, 1);
+          }
+
+          for (let i = this.enemies.length - 1; i >= 0; i--) {
+            if (this.enemies[i].markedForDeletion) this.enemies.splice(i, 1);
+          }
+
+          for (let i = this.particles.length - 1; i >= 0; i--) {
+            if (this.particles[i].markedForDeletion) this.particles.splice(i, 1);
+          }
+        }
+
+        cameraKick(shakeAmp = 0.06, shakeTime = 0.12) {
+          this.cameraShake = Math.max(this.cameraShake, shakeAmp);
+          this.cameraShakeTime = Math.max(this.cameraShakeTime, shakeTime);
+        }
+
+        updateCamera(dt) {
+          const eye = this.player.eyePosition();
+          this.camera.position.copy(eye);
+          this.camera.rotation.set(this.player.pitch, this.player.yaw, 0, "YXZ");
+
+          if (this.cameraShakeTime > 0) {
+            this.cameraShakeTime -= dt;
+            const s = this.cameraShake;
+            this.camera.position.x += this.rng.range(-s, s);
+            this.camera.position.y += this.rng.range(-s, s);
+            this.camera.position.z += this.rng.range(-s, s);
+            this.cameraShake *= 0.9;
+          }
+
+          this.flashDamage = Math.max(0, this.flashDamage - dt * 1.7);
+          this.flashOverlay.material.opacity = this.flashDamage;
+        }
+
+        updateHud() {
+          this.ui.health.textContent = `HEALTH ${Math.round(this.player.health)}`;
+          this.ui.hunger.textContent = `HUNGER ${Math.round(this.player.hunger)}`;
+          this.ui.score.textContent = `SCORE ${Math.floor(this.score)} | KILLS ${this.kills}`;
+
+          this.ui.health.style.color = this.player.health < 32 ? "var(--danger)" : "var(--text)";
+          this.ui.hunger.style.color = this.player.hunger < 28 ? "var(--warn)" : "var(--text)";
+        }
+
+        updateHotbar() {
+          const slots = this.ui.hotbar.children;
+          for (let i = 0; i < this.inventory.hotbar.length; i++) {
+            const slot = this.inventory.hotbar[i];
+            const node = slots[i];
+            node.classList.toggle("active", i === this.inventory.selectedSlot);
+            node.querySelector(".slot-name").textContent = slot.label;
+            node.querySelector(".slot-count").textContent = String(slot.count || 0);
+          }
+        }
+
+        updateInputShortcuts() {
+          const wheel = this.input.consumeWheelDelta();
+          if (wheel !== 0) {
+            this.inventory.selectedSlot = (this.inventory.selectedSlot + wheel + 9) % 9;
+            this.updateHotbar();
+          }
+
+          if (this.input.isPressed("KeyE")) {
+            this.ui.craftWrap.classList.toggle("hidden");
+          }
+        }
+
+        handleResize() {
+          const width = this.root.clientWidth;
+          const height = this.root.clientHeight;
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height, false);
+        }
+
+        update(dt) {
+          if (this.state !== "PLAYING") return;
+
+          this.time += dt;
+          if (this.time >= this.dayCount * this.dayLength) this.dayCount += 1;
+
+          this.updateInputShortcuts();
+
+          this.player.update(dt, this);
+          this.updateTargeting();
+          this.updateSpawns(dt);
+          this.updateEntities(dt);
+          this.updateCamera(dt);
+          this.updateLighting();
+          this.updateHud();
+
+          if (this.messageTimer > 0) {
+            this.messageTimer -= dt;
+            if (this.messageTimer <= 0) this.ui.message.classList.remove("visible");
+          }
+
+          if (this.input.pointerLocked) {
+            this.hadPointerLock = true;
+          } else if (this.hadPointerLock && this.state === "PLAYING") {
+            this.pause();
+          }
+
+          this.refreshCraftButtons();
+        }
+
+        render() {
+          let last = performance.now();
+
+          const tick = (now) => {
+            requestAnimationFrame(tick);
+            const dt = Math.min(0.1, (now - last) / 1000);
+            last = now;
+
+            this.update(dt);
+            this.renderer.render(this.scene, this.camera);
+            this.input.endFrame();
+          };
+
+          requestAnimationFrame(tick);
+        }
+      }
+
+      // 4. GAME MANAGER + 5. BOOTSTRAP
+      const game = new Game(document.getElementById("game-shell"));
+      window.__GAME__ = game;
+    </script>
+  </body>
+</html>
